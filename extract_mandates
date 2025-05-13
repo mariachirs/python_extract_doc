@@ -1,0 +1,57 @@
+import zipfile
+from lxml import etree
+from pathlib import Path
+
+def extract_mandats_with_org(docx_filename: str):
+    folder = Path("C:/Validation")
+    docx_path = folder / docx_filename
+    output_txt_path = folder / f"{docx_path.stem}_mandats_with_org.txt"
+
+    with zipfile.ZipFile(docx_path) as docx_zip:
+        if 'word/document.xml' not in docx_zip.namelist():
+            raise FileNotFoundError("document.xml not found in DOCX.")
+
+        xml_content = docx_zip.read('word/document.xml')
+        tree = etree.fromstring(xml_content)
+
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        paragraphs = tree.findall('.//w:p', namespaces=ns)
+
+        mandats = []
+        current_mandat = []
+        last_seen_org = None
+        collecting = False
+
+        for para in paragraphs:
+            texts = para.findall('.//w:t', namespaces=ns)
+            para_text = ''.join(t.text for t in texts if t.text).strip()
+
+            if not para_text:
+                continue
+
+            if para_text.lower().startswith('mandat no'):
+                if current_mandat:
+                    mandats.append(current_mandat)
+
+                org_header = last_seen_org or "Organisation inconnue"
+                current_mandat = [f"Organisation: {org_header}", para_text]
+                collecting = True
+            elif collecting:
+                current_mandat.append(para_text)
+            else:
+                last_seen_org = para_text  # keep latest org name
+
+        if current_mandat:
+            mandats.append(current_mandat)
+
+        with open(output_txt_path, 'w', encoding='utf-8') as f:
+            for idx, block in enumerate(mandats, 1):
+                f.write(f"=== Mandat {idx} ===\n")
+                for line in block:
+                    f.write(line + '\n')
+                f.write('\n')
+
+    print(f"Saved {len(mandats)} mandats to {output_txt_path}")
+
+# Run it
+extract_mandats_with_org('MARTINS_Roni_CV_24-04-22.docx')
