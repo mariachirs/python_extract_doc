@@ -1,0 +1,68 @@
+# file: extract_named_sections_json.py
+
+import zipfile
+from lxml import etree
+from pathlib import Path
+import json
+
+
+def extract_named_sections(docx_filename: str):
+    folder = Path("C:/Validation")
+    docx_path = folder / docx_filename
+    output_json_path = folder / f"{docx_path.stem}_named_sections.json"
+
+    named_sections = [
+        "Principaux domaines",
+        "Formation académique",
+        "Certifications",
+        "Résumé des interventions",
+        "Technologies",
+        "Perfectionnement",
+        "Autres formations",
+        "Associations",
+        "Publications",
+        "Conférences données ou suivies",
+        "Langues parlées, écrites"
+    ]
+
+    with zipfile.ZipFile(docx_path) as docx_zip:
+        if 'word/document.xml' not in docx_zip.namelist():
+            raise FileNotFoundError("document.xml not found in DOCX")
+
+        xml_content = docx_zip.read('word/document.xml')
+        tree = etree.fromstring(xml_content)
+
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        paragraphs = tree.findall('.//w:p', namespaces=ns)
+
+        data = {}
+        current_section = None
+        section_buffer = []
+
+        for para in paragraphs:
+            texts = para.findall('.//w:t', namespaces=ns)
+            para_text = ''.join(t.text for t in texts if t.text).strip()
+            if not para_text:
+                continue
+
+            for section in named_sections:
+                if para_text.lower().startswith(section.lower()):
+                    if current_section and section_buffer:
+                        data[current_section] = section_buffer
+                    current_section = section
+                    section_buffer = []
+                    break
+            else:
+                if current_section:
+                    section_buffer.append(para_text)
+
+        if current_section and section_buffer:
+            data[current_section] = section_buffer
+
+        with open(output_json_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    print(f"Saved named sectioned content to {output_json_path}")
+
+# Run it
+extract_named_sections('CV-Gabarit-LGS-2023.docx')
