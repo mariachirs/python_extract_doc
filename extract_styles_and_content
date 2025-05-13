@@ -1,0 +1,44 @@
+
+import zipfile
+from lxml import etree
+from pathlib import Path
+from collections import defaultdict
+
+def extract_texts_by_style(docx_filename: str):
+    folder = Path("C:/Validation")
+    docx_path = folder / docx_filename
+    output_txt_path = folder / f"{docx_path.stem}_text_by_style.txt"
+
+    with zipfile.ZipFile(docx_path) as docx_zip:
+        if 'word/document.xml' not in docx_zip.namelist():
+            raise FileNotFoundError("document.xml not found in DOCX file.")
+
+        xml_content = docx_zip.read('word/document.xml')
+        tree = etree.fromstring(xml_content)
+
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+
+        paragraphs = tree.findall('.//w:p', namespaces=ns)
+        styled_texts = defaultdict(list)
+
+        for para in paragraphs:
+            pPr = para.find('./w:pPr/w:pStyle', namespaces=ns)
+            if pPr is not None:
+                style_name = pPr.attrib.get(f'{{{ns["w"]}}}val')
+                if style_name:
+                    texts = para.findall('.//w:t', namespaces=ns)
+                    full_text = ''.join(t.text for t in texts if t.text)
+                    if full_text.strip():
+                        styled_texts[style_name].append(full_text)
+
+        with open(output_txt_path, 'w', encoding='utf-8') as f:
+            for style, texts in styled_texts.items():
+                f.write(f"=== Style: {style} ===\n")
+                for line in texts:
+                    f.write(line + '\n')
+                f.write('\n')
+
+    print(f"Extracted text grouped by styles to {output_txt_path}")
+
+# Example usage
+extract_texts_by_style('example.docx')
