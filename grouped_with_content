@@ -1,0 +1,62 @@
+import zipfile
+from lxml import etree
+from pathlib import Path
+from collections import defaultdict
+
+def extract_sections_by_styles(docx_filename: str, styles_to_extract: list):
+    folder = Path("C:/Validation")
+    docx_path = folder / docx_filename
+    base_output_dir = folder / f"{docx_path.stem}_style_sections"
+    base_output_dir.mkdir(exist_ok=True)
+
+    with zipfile.ZipFile(docx_path) as docx_zip:
+        if 'word/document.xml' not in docx_zip.namelist():
+            raise FileNotFoundError("document.xml not found in DOCX.")
+
+        xml_content = docx_zip.read('word/document.xml')
+        tree = etree.fromstring(xml_content)
+
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        paragraphs = tree.findall('.//w:p', namespaces=ns)
+
+        current_style = None
+        current_section = []
+        sections_by_style = defaultdict(list)
+
+        for para in paragraphs:
+            style_el = para.find('./w:pPr/w:pStyle', namespaces=ns)
+            style_name = style_el.attrib.get(f'{{{ns["w"]}}}val') if style_el is not None else None
+
+            texts = para.findall('.//w:t', namespaces=ns)
+            para_text = ''.join(t.text for t in texts if t.text).strip()
+
+            if style_name in styles_to_extract:
+                if current_style and current_section:
+                    sections_by_style[current_style].append(current_section)
+
+                current_style = style_name
+                current_section = [para_text] if para_text else []
+            elif current_style:
+                if para_text:
+                    current_section.append(para_text)
+
+        if current_style and current_section:
+            sections_by_style[current_style].append(current_section)
+
+        for style, sections in sections_by_style.items():
+            output_dir = base_output_dir / style
+            output_dir.mkdir(exist_ok=True)
+
+            for idx, section in enumerate(sections, 1):
+                section_file = output_dir / f"{style}_Section_{idx:02d}.txt"
+                with open(section_file, 'w', encoding='utf-8') as f:
+                    for line in section:
+                        f.write(line + '\n')
+
+    print(f"Extracted sections for styles: {', '.join(sections_by_style)} into {base_output_dir}")
+
+# Example usage
+extract_sections_by_styles(
+    'MARTINS_Roni_CV_24-04-22.docx',
+    styles_to_extract=['Titre1', 'Titre2']
+)
