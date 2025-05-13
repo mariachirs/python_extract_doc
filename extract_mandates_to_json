@@ -1,0 +1,86 @@
+import zipfile
+from lxml import etree
+from pathlib import Path
+import json
+
+
+def extract_mandats_to_json(docx_filename: str):
+    folder = Path("C:/Validation")
+    docx_path = folder / docx_filename
+    output_json_path = folder / f"{docx_path.stem}_mandats.json"
+
+    with zipfile.ZipFile(docx_path) as docx_zip:
+        if 'word/document.xml' not in docx_zip.namelist():
+            raise FileNotFoundError("document.xml not found in DOCX.")
+
+        xml_content = docx_zip.read('word/document.xml')
+        tree = etree.fromstring(xml_content)
+
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        paragraphs = tree.findall('.//w:p', namespaces=ns)
+
+        mandats = []
+        current = {}
+        last_seen_org = None
+        last_seen_client = None
+        collecting = False
+        buffer = []
+
+        for para in paragraphs:
+            texts = para.findall('.//w:t', namespaces=ns)
+            para_text = ''.join(t.text for t in texts if t.text).strip()
+
+            if not para_text:
+                continue
+
+            if para_text.lower().startswith("mandat no"):
+                if buffer and current:
+                    current['Description'] = ' '.join(buffer).strip()
+                    mandats.append(current)
+
+                current = {
+                    "Name of company": last_seen_org or "Unknown",
+                    "Client": last_seen_client or "Unknown"
+                }
+                buffer = []
+                collecting = True
+
+                # Extract Mandat number
+                current['Mandat no'] = para_text.split(':')[-1].strip()
+
+            elif collecting:
+                if para_text.lower().startswith("projet"):
+                    current['Projet'] = para_text.split(':', 1)[-1].strip()
+                elif para_text.lower().startswith("envergure"):
+                    current['Envergure'] = para_text.split(':', 1)[-1].strip()
+                elif para_text.lower().startswith("fonction"):
+                    current['Fonction'] = para_text.split(':', 1)[-1].strip()
+                elif para_text.lower().startswith("période"):
+                    current['Période'] = para_text.split(':', 1)[-1].strip()
+                elif para_text.lower().startswith("efforts"):
+                    current['Efforts'] = para_text.split(':', 1)[-1].strip()
+                elif para_text.lower().startswith("référence"):
+                    current['Référence'] = para_text.split(':', 1)[-1].strip()
+                elif para_text.lower().startswith("environnement technologique"):
+                    current['Environnement technologique'] = ''
+                elif 'Environnement technologique' in current:
+                    current['Environnement technologique'] += ' ' + para_text
+                else:
+                    buffer.append(para_text)
+
+            else:
+                # Try to store org/client blocks before "Mandat no"
+                last_seen_client = last_seen_org
+                last_seen_org = para_text
+
+        if buffer and current:
+            current['Description'] = ' '.join(buffer).strip()
+            mandats.append(current)
+
+        with open(output_json_path, 'w', encoding='utf-8') as f:
+            json.dump(mandats, f, ensure_ascii=False, indent=2)
+
+    print(f"Saved {len(mandats)} mandats to {output_json_path}")
+
+# Run it
+extract_mandats_to_json('MARTINS_Roni_CV_24-04-22.docx')
