@@ -1,0 +1,122 @@
+# file: extract_named_sections_json.py
+
+import zipfile
+from lxml import etree
+from pathlib import Path
+import json
+import re
+
+ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+
+
+def get_paragraphs(docx_path):
+    with zipfile.ZipFile(docx_path) as docx_zip:
+        if 'word/document.xml' not in docx_zip.namelist():
+            raise FileNotFoundError("document.xml not found in DOCX")
+        xml_content = docx_zip.read('word/document.xml')
+        tree = etree.fromstring(xml_content)
+        return tree.findall('.//w:p', namespaces=ns)
+
+
+def extract_section(paragraphs, start_title, end_titles):
+    buffer = []
+    collecting = False
+    for para in paragraphs:
+        texts = para.findall('.//w:t', namespaces=ns)
+        para_text = ''.join(t.text for t in texts if t.text).strip()
+        if not para_text:
+            continue
+        if para_text.lower().startswith(start_title.lower()):
+            collecting = True
+            continue
+        if any(para_text.lower().startswith(e.lower()) for e in end_titles):
+            if collecting:
+                break
+        if collecting:
+            buffer.append(para_text)
+    return buffer
+
+
+def extract_principaux_domaines(paragraphs):
+    return extract_section(paragraphs, "Principaux domaines", ["Formation académique"])
+
+
+def extract_formation_academique(paragraphs):
+    return extract_section(paragraphs, "Formation académique", ["Certifications"])
+
+
+def extract_certifications(paragraphs):
+    return extract_section(paragraphs, "Certifications", ["Résumé des interventions"])
+
+
+def extract_resume_interventions(paragraphs):
+    buffer = {}
+    current_employer = None
+    current_fields = {}
+    field_keys = [
+        'Mandat no', 'Projet', 'Envergure', 'Fonction', 'Période', 'Efforts', 'Référence',
+        'Environnement technologique'
+    ]
+
+    paragraphs_iter = iter(paragraphs)
+    for para in paragraphs_iter:
+        texts = para.findall('.//w:t', namespaces=ns)
+        text = ''.join(t.text for t in texts if t.text).strip()
+        if not text:
+            continue
+
+        if re.match(r"Nom de l[’']?employeur", text, re.IGNORECASE):
+            if current_employer and current_fields:
+                buffer[current_employer] = current_fields
+            current_employer = next((t.text.strip() for t in next(paragraphs_iter).findall('.//w:t', namespaces=ns) if t.text), "Nom inconnu")
+            current_fields = {}
+        elif current_employer:
+            for key in field_keys:
+                if text.lower().startswith(key.lower()):
+                    current_fields[key] = text.split(':', 1)[-1].strip()
+                    break
+            else:
+                current_fields.setdefault('Description', []).append(text)
+
+    if current_employer and current_fields:
+        buffer[current_employer] = current_fields
+
+    return buffer
+
+
+def extract_perfectionnement(paragraphs):
+    return extract_section(paragraphs, "Perfectionnement", ["Autres formations"])
+
+
+def extract_autres_formations(paragraphs):
+    return extract_section(paragraphs, "Autres formations", ["Associations"])
+
+
+def extract_associations(paragraphs):
+    return extract_section(paragraphs, "Associations", ["Publications"])
+
+
+def extract_named_sections(docx_filename: str):
+    folder = Path("C:/Validation")
+    docx_path = folder / docx_filename
+    output_json_path = folder / f"{docx_path.stem}_sections_named.json"
+
+    paragraphs = get_paragraphs(docx_path)
+
+    data = {
+        "Principaux domaines": extract_principaux_domaines(paragraphs),
+        "Formation académique": extract_formation_academique(paragraphs),
+        "Certifications": extract_certifications(paragraphs),
+        "Résumé des interventions": extract_resume_interventions(paragraphs),
+        "Perfectionnement": extract_perfectionnement(paragraphs),
+        "Autres formations": extract_autres_formations(paragraphs),
+        "Associations": extract_associations(paragraphs),
+    }
+
+    with open(output_json_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    print(f"Saved named sections to {output_json_path}")
+
+# Run it
+extract_named_sections('CV-Gabarit-LGS-2023.docx')
