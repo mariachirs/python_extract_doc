@@ -1,12 +1,12 @@
 from docx import Document
 from io import BytesIO
-from docx.shared import Pt
+from collections import Counter
 
 def load_docx_from_memory(file_bytes):
     """Load a .docx file into memory and return a Document object."""
     return Document(BytesIO(file_bytes))
 
-def check_cv_headers_by_font(doc):
+def check_cv_unique_headers(doc):
     expected_titles = [
         "Principaux domaines",
         "Formation académique",
@@ -16,44 +16,42 @@ def check_cv_headers_by_font(doc):
         "Langues parlées, écrites"
     ]
     
+    # Normalize paragraph texts and count occurrences
+    para_texts = [para.text.strip().lower() for para in doc.paragraphs if para.text.strip()]
+    text_counts = Counter(para_texts)
+
     expected_lower = [title.lower() for title in expected_titles]
-    found = set()
 
-    for para in doc.paragraphs:
-        text = para.text.strip().lower()
-        if text not in expected_lower:
-            continue
+    missing = []
+    duplicated = []
 
-        # Check font name and size from the first run of the paragraph
-        if para.runs:
-            run = para.runs[0]
-            font = run.font
-
-            font_name = font.name
-            font_size = font.size
-
-            if (
-                font_name and "ibm plex sans" in font_name.lower() and
-                font_size and font_size.pt == 12
-            ):
-                found.add(text)
-
-    # Check what's missing
-    missing = [title for title in expected_titles if title.lower() not in found]
+    for title_lower, title_original in zip(expected_lower, expected_titles):
+        count = text_counts.get(title_lower, 0)
+        if count == 0:
+            missing.append(title_original)
+        elif count > 1:
+            duplicated.append((title_original, count))
 
     return {
-        "status": "ok" if not missing else "error",
-        "missing_headers": missing
+        "status": "ok" if not missing and not duplicated else "error",
+        "missing_headers": missing,
+        "duplicated_headers": duplicated
     }
-######################
+#########################
+
 
 with open("CV-Gabarit-LGS-2023.docx", "rb") as f:
     file_bytes = f.read()
 
 doc = load_docx_from_memory(file_bytes)
-result = check_cv_headers_by_font(doc)
+result = check_cv_unique_headers(doc)
 
 if result["status"] == "ok":
-    print("✅ All required headers found with IBM Plex Sans, size 12 pt.")
+    print("✅ All required headers appear exactly once.")
 else:
-    print("❌ Missing headers using correct font/size:", result["missing_headers"])
+    if result["missing_headers"]:
+        print("❌ Missing headers:", result["missing_headers"])
+    if result["duplicated_headers"]:
+        print("⚠️ Headers that appear more than once:")
+        for title, count in result["duplicated_headers"]:
+            print(f" - '{title}' appears {count} times")
