@@ -1,0 +1,77 @@
+from docx import Document
+from io import BytesIO
+import os
+
+def load_docx_from_memory(file_bytes):
+    """Load a .docx file into memory and return a Document object."""
+    return Document(BytesIO(file_bytes))
+
+def extract_table_after_header(doc, header_text="Certifications"):
+    """
+    Extract the first table that appears after a paragraph with specified header text.
+    """
+    header_text_lower = header_text.strip().lower()
+    header_found = False
+    target_tbl = None
+
+    body_elements = list(doc.element.body)
+
+    for elem in body_elements:
+        if elem.tag.endswith('}p'):
+            texts = [node.text for node in elem.iter() if node.tag.endswith('}t') and node.text]
+            full_text = ''.join(texts).strip().lower()
+            if full_text == header_text_lower:
+                header_found = True
+
+        elif header_found and elem.tag.endswith('}tbl'):
+            target_tbl = elem
+            break
+
+    if target_tbl is not None:
+        for tbl in doc.tables:
+            if tbl._element == target_tbl:
+                table_data = []
+                for row in tbl.rows:
+                    table_data.append([cell.text.strip() for cell in row.cells])
+                return table_data
+
+    return []
+
+def restructure_certification_table_rows(table_rows):
+    """
+    Restructure a flat table of certification rows into structured entries.
+    Assumes each certification spans 2 rows:
+    - [Title, Year]
+    - [Organization, Location]
+    """
+    structured = []
+
+    for i in range(0, len(table_rows), 2):
+        if i + 1 < len(table_rows):
+            row1 = table_rows[i]
+            row2 = table_rows[i + 1]
+            if len(row1) >= 2 and len(row2) >= 2:
+                structured.append({
+                    "Title": row1[0].strip(),
+                    "Year": row1[1].strip(),
+                    "Organization": row2[0].strip(),
+                    "Location": row2[1].strip()
+                })
+
+    return structured
+
+# ==== Example usage from disk ====
+if __name__ == "__main__":
+    file_path = "CV-Gabarit-LGS-2023.docx"
+    if not os.path.exists(file_path):
+        print("❌ File not found.")
+    else:
+        with open(file_path, "rb") as f:
+            doc = load_docx_from_memory(f.read())
+
+        raw_table = extract_table_after_header(doc, "Certifications")
+        certs = restructure_certification_table_rows(raw_table)
+
+        print("✅ Extracted Certifications:")
+        for cert in certs:
+            print(cert)
