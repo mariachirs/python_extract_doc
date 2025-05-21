@@ -1,0 +1,66 @@
+Validade Headers
+
+from docx import Document
+from io import BytesIO
+
+def load_docx_from_memory(file_bytes):
+    """Load a .docx file into memory and return a Document object."""
+    file_stream = BytesIO(file_bytes)
+    return Document(file_stream)
+
+def check_cv_headers(doc):
+    expected_titles = [
+        "Principaux domaines",
+        "Formation académique",
+        "Certifications",
+        "Résumé des interventions",
+        "Perfectionnement",
+        "Langues parlées, écrites"
+    ]
+
+    # Normalize expected titles to lowercase
+    expected_map = {title.lower(): title for title in expected_titles}
+    found_headers = {}
+    style_reference = None
+
+    for para in doc.paragraphs:
+        text = para.text.strip().lower()
+        if text in expected_map:
+            original_title = expected_map[text]
+            found_headers[original_title] = para.style.name
+            if not style_reference:
+                style_reference = para.style.name
+
+    missing_headers = []
+    style_mismatches = []
+
+    for original_title in expected_titles:
+        if original_title not in found_headers:
+            missing_headers.append(original_title)
+        elif found_headers[original_title] != style_reference:
+            style_mismatches.append((original_title, found_headers[original_title]))
+
+    return {
+        "status": "ok" if not missing_headers and not style_mismatches else "error",
+        "style_reference": style_reference,
+        "missing_headers": missing_headers,
+        "style_mismatches": style_mismatches
+    }
+
+# ==== Example Usage ====
+# Load the file in memory (replace with your upload mechanism)
+with open("CV-Gabarit-LGS-2023.docx", "rb") as f:
+    file_bytes = f.read()
+
+doc = load_docx_from_memory(file_bytes)
+result = check_cv_headers(doc)
+
+if result["status"] == "ok":
+    print(f"✅ All expected headers found with consistent style: {result['style_reference']}")
+else:
+    if result["missing_headers"]:
+        print("❌ Missing headers:", result["missing_headers"])
+    if result["style_mismatches"]:
+        print("⚠️ Headers with mismatched styles:")
+        for title, style in result["style_mismatches"]:
+            print(f" - '{title}' uses style '{style}' (expected '{result['style_reference']}')")
