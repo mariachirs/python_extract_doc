@@ -1,0 +1,54 @@
+from docx import Document
+from io import BytesIO
+
+def load_docx_from_memory(file_bytes):
+    """Load a .docx file into memory and return a Document object."""
+    return Document(BytesIO(file_bytes))
+
+def extract_table_after_header(doc, header_text="Certifications"):
+    """
+    Extracts the first table after the specified header and returns certification entries
+    as dictionaries grouped by pairs of rows (Title/Year + Org/Location).
+    """
+    header_text_lower = header_text.strip().lower()
+    header_found = False
+    target_tbl = None
+
+    body_elements = list(doc.element.body)
+
+    for elem in body_elements:
+        if elem.tag.endswith('}p'):
+            texts = [node.text for node in elem.iter() if node.tag.endswith('}t') and node.text]
+            full_text = ''.join(texts).strip().lower()
+            if full_text == header_text_lower:
+                header_found = True
+
+        elif header_found and elem.tag.endswith('}tbl'):
+            target_tbl = elem
+            break
+
+    if target_tbl is not None:
+        for tbl in doc.tables:
+            if tbl._element == target_tbl:
+                raw_rows = []
+                for row in tbl.rows:
+                    cells = [cell.text.strip() for cell in row.cells]
+                    if any(cells):  # Skip completely empty rows
+                        raw_rows.append(cells)
+
+                # Group every 2 rows
+                certifications = []
+                for i in range(0, len(raw_rows), 2):
+                    if i + 1 < len(raw_rows):
+                        title_year = raw_rows[i]
+                        org_location = raw_rows[i + 1]
+                        if len(title_year) >= 2 and len(org_location) >= 2:
+                            certifications.append({
+                                "Title": title_year[0],
+                                "Year": title_year[1],
+                                "Organization": org_location[0],
+                                "Location": org_location[1]
+                            })
+                return certifications
+
+    return []
