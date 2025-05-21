@@ -1,109 +1,60 @@
+from docx.document import Document
+
+def extract_certifications_from_doc(doc: Document, target_header="Certifications"):
+    """
+    Extract certification entries from a docx.Document.
+    Each certification is assumed to span 4 lines:
+    Title, Year, Organization, Location.
+    Stops when a known header is found.
+    """
+    # Hardcoded headers where we stop capturing
+    stop_headers = [
+        "Résumé des interventions",
+        "Perfectionnement",
+        "Langues parlées, écrites",
+        "Formation académique",
+        "Principaux domaines"
+    ]
+    stop_headers_lower = [h.lower() for h in stop_headers]
+    target_header_lower = target_header.strip().lower()
+
+    capturing = False
+    collected = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+
+        lower_text = text.lower()
+
+        if not capturing and lower_text == target_header_lower:
+            capturing = True
+            continue
+
+        if capturing:
+            if lower_text in stop_headers_lower:
+                break
+            collected.append(text)
+
+    # Group every 4 lines into one certification
+    certifications = []
+    for i in range(0, len(collected), 4):
+        group = collected[i:i+4]
+        if len(group) == 4:
+            certifications.append({
+                "Title": group[0],
+                "Year": group[1],
+                "Organization": group[2],
+                "Location": group[3]
+            })
+
+    return certifications
+
 from docx import Document
-from io import BytesIO
 
-def extract_section_by_header(file_bytes, target_header, all_known_headers):
-    """
-    Extracts paragraphs under a given header (e.g. 'Certifications') until the next known header.
+doc = Document("CV-Gabarit-LGS-2023.docx")
+certs = extract_certifications_from_doc(doc)
 
-    Args:
-        file_bytes (bytes): The DOCX file in memory.
-        target_header (str): Header to search for (e.g., 'Certifications').
-        all_known_headers (list[str]): List of all other headers that may follow.
-
-    Returns:
-        list[str]: Paragraph texts under the target section.
-    """
-    target_header_lower = target_header.lower()
-    known_headers_lower = [h.lower() for h in all_known_headers]
-
-    with BytesIO(file_bytes) as stream:
-        doc = Document(stream)
-        capturing = False
-        section_content = []
-
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            text_lower = text.lower()
-
-            if not text:
-                continue  # Skip empty lines
-
-            if text_lower == target_header_lower:
-                capturing = True
-                continue
-
-            if capturing and text_lower in known_headers_lower:
-                break  # Stop when the next known header is found
-
-            if capturing:
-                section_content.append(text)
-
-    return section_content
-
-
-##################################
-
-from docx import Document
-from io import BytesIO
-
-def extract_section_by_header(file_bytes, target_header, all_known_headers):
-    """
-    Extracts paragraphs under a given header (e.g. 'Certifications') until the next known header.
-
-    Args:
-        file_bytes (bytes): The DOCX file in memory.
-        target_header (str): Header to search for (e.g., 'Certifications').
-        all_known_headers (list[str]): List of all other headers that may follow.
-
-    Returns:
-        list[str]: Paragraph texts under the target section.
-    """
-    target_header_lower = target_header.lower()
-    known_headers_lower = [h.lower() for h in all_known_headers]
-
-    with BytesIO(file_bytes) as stream:
-        doc = Document(stream)
-        capturing = False
-        section_content = []
-
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            text_lower = text.lower()
-
-            if not text:
-                continue  # Skip empty lines
-
-            if text_lower == target_header_lower:
-                capturing = True
-                continue
-
-            if capturing and text_lower in known_headers_lower:
-                break  # Stop when the next known header is found
-
-            if capturing:
-                section_content.append(text)
-
-    return section_content
-🧪 Example Usage
-python
-Copier
-Modifier
-with open("CV-Gabarit-LGS-2023.docx", "rb") as f:
-    file_bytes = f.read()
-
-# Define all section headers that might follow "Certifications"
-all_headers = [
-    "Principaux domaines",
-    "Formation académique",
-    "Certifications",
-    "Résumé des interventions",
-    "Perfectionnement",
-    "Langues parlées, écrites"
-]
-
-cert_section = extract_section_by_header(file_bytes, "Certifications", all_headers)
-
-# Display extracted certification section
-print("📝 Certifications Section:")
-for line in cert_section:
-    print(f"- {line}")
+for cert in certs:
+    print(cert)
