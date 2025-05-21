@@ -1,12 +1,12 @@
 from docx import Document
 from io import BytesIO
+from docx.shared import Pt
 
 def load_docx_from_memory(file_bytes):
     """Load a .docx file into memory and return a Document object."""
-    file_stream = BytesIO(file_bytes)
-    return Document(file_stream)
+    return Document(BytesIO(file_bytes))
 
-def check_cv_headers_only_heading(doc):
+def check_cv_headers_by_font(doc):
     expected_titles = [
         "Principaux domaines",
         "Formation académique",
@@ -15,32 +15,45 @@ def check_cv_headers_only_heading(doc):
         "Perfectionnement",
         "Langues parlées, écrites"
     ]
-
-    known_heading_keywords = {"heading", "titre"}  # Accepts styles like 'Heading 1', 'Titre 1'
+    
     expected_lower = [title.lower() for title in expected_titles]
     found = set()
 
     for para in doc.paragraphs:
         text = para.text.strip().lower()
-        style_name = para.style.name.lower()
-        if text in expected_lower and any(k in style_name for k in known_heading_keywords):
-            found.add(text)
+        if text not in expected_lower:
+            continue
 
+        # Check font name and size from the first run of the paragraph
+        if para.runs:
+            run = para.runs[0]
+            font = run.font
+
+            font_name = font.name
+            font_size = font.size
+
+            if (
+                font_name and "ibm plex sans" in font_name.lower() and
+                font_size and font_size.pt == 12
+            ):
+                found.add(text)
+
+    # Check what's missing
     missing = [title for title in expected_titles if title.lower() not in found]
 
     return {
         "status": "ok" if not missing else "error",
         "missing_headers": missing
     }
-#################################
+######################
 
 with open("CV-Gabarit-LGS-2023.docx", "rb") as f:
     file_bytes = f.read()
 
 doc = load_docx_from_memory(file_bytes)
-result = check_cv_headers_only_heading(doc)
+result = check_cv_headers_by_font(doc)
 
 if result["status"] == "ok":
-    print("✅ All required headers found using heading styles.")
+    print("✅ All required headers found with IBM Plex Sans, size 12 pt.")
 else:
-    print("❌ Missing headers with heading styles:", result["missing_headers"])
+    print("❌ Missing headers using correct font/size:", result["missing_headers"])
