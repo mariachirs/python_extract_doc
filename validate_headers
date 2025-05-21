@@ -1,12 +1,8 @@
-from docx import Document
-from io import BytesIO
-from collections import Counter
-
 def load_docx_from_memory(file_bytes):
     """Load a .docx file into memory and return a Document object."""
     return Document(BytesIO(file_bytes))
 
-def check_cv_unique_headers(doc):
+def check_cv_unique_headers_or_throw(doc):
     expected_titles = [
         "Principaux domaines",
         "Formation académique",
@@ -15,8 +11,7 @@ def check_cv_unique_headers(doc):
         "Perfectionnement",
         "Langues parlées, écrites"
     ]
-    
-    # Normalize paragraph texts and count occurrences
+
     para_texts = [para.text.strip().lower() for para in doc.paragraphs if para.text.strip()]
     text_counts = Counter(para_texts)
 
@@ -32,26 +27,38 @@ def check_cv_unique_headers(doc):
         elif count > 1:
             duplicated.append((title_original, count))
 
-    return {
-        "status": "ok" if not missing and not duplicated else "error",
-        "missing_headers": missing,
-        "duplicated_headers": duplicated
-    }
-#########################
+    if missing or duplicated:
+        messages = []
+        if missing:
+            messages.append(f"Missing headers: {', '.join(missing)}")
+        if duplicated:
+            dups = ', '.join(f"'{title}' ({count}x)" for title, count in duplicated)
+            messages.append(f"Duplicated headers: {dups}")
+        raise ValueError("Header validation failed: " + " | ".join(messages))
+
+    return True  # Everything is OK
 
 
-with open("CV-Gabarit-LGS-2023.docx", "rb") as f:
-    file_bytes = f.read()
+===========================
 
-doc = load_docx_from_memory(file_bytes)
-result = check_cv_unique_headers(doc)
+try:
+    with open("CV-Gabarit-LGS-2023.docx", "rb") as f:
+        doc = load_docx_from_memory(f.read())
+    check_cv_unique_headers_or_throw(doc)
+    print("✅ Headers are valid.")
+except ValueError as e:
+    # In a real web API, you'd raise an HTTPException here instead
+    print(f"❌ HTTP 400: {e}")
 
-if result["status"] == "ok":
-    print("✅ All required headers appear exactly once.")
-else:
-    if result["missing_headers"]:
-        print("❌ Missing headers:", result["missing_headers"])
-    if result["duplicated_headers"]:
-        print("⚠️ Headers that appear more than once:")
-        for title, count in result["duplicated_headers"]:
-            print(f" - '{title}' appears {count} times")
+========
+
+
+
+try:
+    with open("CV-Gabarit-LGS-2023.docx", "rb") as f:
+        doc = load_docx_from_memory(f.read())
+    check_cv_unique_headers_or_throw(doc)
+    print("✅ Headers are valid.")
+except ValueError as e:
+    # In a real web API, you'd raise an HTTPException here instead
+    print(f"❌ HTTP 400: {e}")
