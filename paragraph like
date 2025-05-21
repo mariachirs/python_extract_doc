@@ -1,0 +1,40 @@
+from docx import Document
+from io import BytesIO
+from collections import defaultdict
+
+def load_docx_from_memory(file_bytes):
+    """Load a .docx file into memory and return a Document object."""
+    return Document(BytesIO(file_bytes))
+
+def check_cv_headers_like_or_throw(doc):
+    expected_titles = [
+        "Principaux domaines",
+        "Formation académique",
+        "Certifications",
+        "Résumé des interventions",
+        "Perfectionnement",
+        "Langues parlées, écrites"
+    ]
+
+    # Create mapping for how many times each expected title was found as substring
+    found_counts = defaultdict(int)
+
+    for para in doc.paragraphs:
+        text = para.text.strip().lower()
+        for expected in expected_titles:
+            if expected.lower() in text:
+                found_counts[expected] += 1
+
+    missing = [title for title in expected_titles if found_counts[title] == 0]
+    duplicated = [(title, count) for title, count in found_counts.items() if count > 1]
+
+    if missing or duplicated:
+        messages = []
+        if missing:
+            messages.append(f"Missing headers: {', '.join(missing)}")
+        if duplicated:
+            dups = ', '.join(f"'{title}' ({count}x)" for title, count in duplicated)
+            messages.append(f"Duplicated headers: {dups}")
+        raise ValueError("Header validation failed: " + " | ".join(messages))
+
+    return True
