@@ -1,0 +1,28 @@
+Simple extraction
+def extract_section_text(doc_path, header_title):
+    doc = Document(doc_path)
+    capture = False
+    buffer = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if not text:
+            continue
+
+        if not capture and header_title.lower() in text.lower():
+            capture = True
+            continue
+
+        if capture:
+            # Heuristic to detect next header
+            is_header_like = (
+                para.style.name.startswith("Heading") or
+                text.isupper() or
+                len(text.split()) <= 4 and text.istitle()
+            )
+            if is_header_like:
+                break
+            buffer.append(text)
+
+    return "\n".join(buffer)
