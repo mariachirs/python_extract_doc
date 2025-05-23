@@ -1,38 +1,45 @@
 from docx import Document
-import unicodedata
 from typing import List, Tuple
+import unicodedata
 
 def normalize(text: str) -> str:
-    return unicodedata.normalize('NFKC', text).strip().lower()
+    return unicodedata.normalize('NFKC', text.strip().lower())
 
-def extract_languages_from_cv(filepath: str) -> List[Tuple[str, str]]:
+def extract_languages_from_docx_tables(filepath: str) -> List[Tuple[str, str]]:
     doc = Document(filepath)
-    languages_section_started = False
-    lines = []
+    results = []
+    extracting = False
+    data = []
 
-    stop_keywords = {
-        "certifications", "résumé des interventions", "technologies", "perfectionnement",
-        "formation académique", "autres formations", "associations", "publications", "conférences données ou suivies",
-    }
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            if not cells:
+                continue
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        norm = normalize(text)
+            # Flatten the row into a single normalized string for header detection
+            row_text = ' '.join(cells).strip()
+            norm_text = normalize(row_text)
 
-        if not text:
-            continue
+            if norm_text == normalize("Langues parlées, écrites"):
+                extracting = True
+                continue
 
-        if norm == normalize("Langues parlées, écrites"):
-            languages_section_started = True
-            continue
+            if extracting:
+                # Stop if we hit something that looks like a header or unrelated section
+                if "curriculum vitae" in norm_text or any(
+                    keyword in norm_text
+                    for keyword in ["formation", "certification", "technologies", "publications", "expérience"]
+                ):
+                    break
+                # Append valid content
+                for cell in cells:
+                    if cell:
+                        data.append(cell.strip())
 
-        if languages_section_started:
-            if any(norm.startswith(h) for h in stop_keywords) or "curriculum vitae" in norm:
-                break
-            lines.append(text)
+    # Pair: first half is languages, second half is levels
+    if len(data) % 2 != 0:
+        raise ValueError("Uneven number of language/level entries")
 
-    if len(lines) % 2 != 0:
-        raise ValueError("Uneven number of lines: unable to reliably pair languages and levels")
-
-    half = len(lines) // 2
-    return list(zip(lines[:half], lines[half:]))
+    half = len(data) // 2
+    return list(zip(data[:half], data[half:]))
