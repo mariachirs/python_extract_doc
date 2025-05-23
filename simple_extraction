@@ -1,8 +1,23 @@
-Simple extraction
-def extract_section_text(doc_path, header_title):
-    doc = Document(doc_path)
-    capture = False
+from docx import Document
+from typing import List, Tuple
+
+def extract_languages_exact(file_path: str) -> List[Tuple[str, str]]:
+    doc = Document(file_path)
+    extracting = False
     buffer = []
+
+    # Define known section headers to stop at
+    stop_headers = {
+        "Certifications",
+        "Résumé des interventions",
+        "Technologies",
+        "Perfectionnement",
+        "Formation académique",
+        "Autres formations",
+        "Associations",
+        "Publications",
+        "Conférences données ou suivies",
+    }
 
     for para in doc.paragraphs:
         text = para.text.strip()
@@ -10,19 +25,21 @@ def extract_section_text(doc_path, header_title):
         if not text:
             continue
 
-        if not capture and header_title.lower() in text.lower():
-            capture = True
+        # Look for the exact header to start
+        if text == "Langues parlées, écrites":
+            extracting = True
             continue
 
-        if capture:
-            # Heuristic to detect next header
-            is_header_like = (
-                para.style.name.startswith("Heading") or
-                text.isupper() or
-                len(text.split()) <= 4 and text.istitle()
-            )
-            if is_header_like:
-                break
+        # If already extracting, stop at the next known header
+        if extracting and text in stop_headers:
+            break
+
+        if extracting:
             buffer.append(text)
 
-    return "\n".join(buffer)
+    # Simple pairing of languages with their levels
+    half = len(buffer) // 2
+    languages = buffer[:half]
+    levels = buffer[half:]
+
+    return list(zip(languages, levels))
