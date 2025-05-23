@@ -4,3 +4,10 @@ Tags
 {% if languages|length > 3 %}
   {% if languages[3].name %}{{ languages[3].name }}{% endif %}
 {% endif %}
+
+
+
+/////////////////////////
+
+{% if languages|length > 0 %}{{ languages[0].name }}{% endif %}
+{% if languages|length > 0 %}{{ languages[0].level }}{% endif %}
