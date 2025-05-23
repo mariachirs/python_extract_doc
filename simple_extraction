@@ -1,45 +1,38 @@
 from docx import Document
+import unicodedata
 from typing import List, Tuple
 
-def extract_languages_exact(file_path: str) -> List[Tuple[str, str]]:
-    doc = Document(file_path)
-    extracting = False
-    buffer = []
+def normalize(text: str) -> str:
+    return unicodedata.normalize('NFKC', text).strip().lower()
 
-    # Define known section headers to stop at
-    stop_headers = {
-        "Certifications",
-        "Résumé des interventions",
-        "Technologies",
-        "Perfectionnement",
-        "Formation académique",
-        "Autres formations",
-        "Associations",
-        "Publications",
-        "Conférences données ou suivies",
+def extract_languages_from_cv(filepath: str) -> List[Tuple[str, str]]:
+    doc = Document(filepath)
+    languages_section_started = False
+    lines = []
+
+    stop_keywords = {
+        "certifications", "résumé des interventions", "technologies", "perfectionnement",
+        "formation académique", "autres formations", "associations", "publications", "conférences données ou suivies",
     }
 
     for para in doc.paragraphs:
         text = para.text.strip()
+        norm = normalize(text)
 
         if not text:
             continue
 
-        # Look for the exact header to start
-        if text == "Langues parlées, écrites":
-            extracting = True
+        if norm == normalize("Langues parlées, écrites"):
+            languages_section_started = True
             continue
 
-        # If already extracting, stop at the next known header
-        if extracting and text in stop_headers:
-            break
+        if languages_section_started:
+            if any(norm.startswith(h) for h in stop_keywords) or "curriculum vitae" in norm:
+                break
+            lines.append(text)
 
-        if extracting:
-            buffer.append(text)
+    if len(lines) % 2 != 0:
+        raise ValueError("Uneven number of lines: unable to reliably pair languages and levels")
 
-    # Simple pairing of languages with their levels
-    half = len(buffer) // 2
-    languages = buffer[:half]
-    levels = buffer[half:]
-
-    return list(zip(languages, levels))
+    half = len(lines) // 2
+    return list(zip(lines[:half], lines[half:]))
