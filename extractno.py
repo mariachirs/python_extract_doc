@@ -89,3 +89,58 @@ def extract_all_technology_rows(doc_path):
                 all_rows.append(cells[:4])  # Only take the first 4 columns
 
     return all_rows
+
+
+==============================================================
+
+def parse_technology_cell_pairs(cells, current_type):
+    """
+    Parse up to two technology/mois pairs from a 4-cell row.
+    Returns a list of dicts with 'technology', 'mois', and 'type'.
+    """
+    parsed_entries = []
+
+    for i in [0, 2]:  # column pairs: (0,1) and (2,3)
+        tech = cells[i].strip().replace('\xa0', ' ')
+        mois = cells[i + 1].strip().replace('\xa0', ' ') if i + 1 < len(cells) else ''
+
+        if tech.endswith(":") and not mois:
+            # This is a section header, not a data row
+            return [{"type_header": tech.replace(":", "").strip()}]
+
+        if tech and mois:
+            try:
+                mois_int = int(mois)
+                parsed_entries.append({
+                    "technology": tech,
+                    "mois": mois_int,
+                    "type": current_type
+                })
+            except ValueError:
+                continue  # mois is not a valid integer
+
+    return parsed_entries
+
+
+def extract_technologies_with_categories(doc_path):
+    doc = Document(doc_path)
+    entries = []
+    current_type = None
+
+    for table in doc.tables:
+        header_cells = [cell.text.strip().replace('\xa0', ' ') for cell in table.rows[0].cells]
+        if "Technologies" in header_cells and "Mois" in header_cells:
+            for row in table.rows[1:]:
+                cells = [cell.text.strip().replace('\xa0', ' ') for cell in row.cells]
+                while len(cells) < 4:
+                    cells.append('')
+
+                parsed = parse_technology_cell_pairs(cells, current_type)
+
+                for item in parsed:
+                    if "type_header" in item:
+                        current_type = item["type_header"]
+                    else:
+                        entries.append(item)
+
+    return entries
