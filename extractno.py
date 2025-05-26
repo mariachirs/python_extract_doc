@@ -66,3 +66,26 @@ def extract_technologies_by_required_types(doc_path, required_types):
 # Example usage:
 doc_path = "MARTINS_Roni_CV_24-02-13.docx"  # Change this path to your DOCX file
 entries, missing = extract_technologies_by_required_types(doc_path, REQUIRED_TYPES)
+
+
+
+///////////////////////////////////////
+
+
+def extract_all_technology_rows(doc_path):
+    doc = Document(doc_path)
+    all_rows = []
+
+    for table in doc.tables:
+        # Detect valid table by headers
+        first_row = table.rows[0].cells
+        headers = [cell.text.strip().replace('\xa0', ' ') for cell in first_row]
+        if "Technologies" in headers and "Mois" in headers:
+            for row in table.rows[1:]:  # skip header
+                cells = [cell.text.strip().replace('\xa0', ' ') for cell in row.cells]
+                # Ensure each row has 4 items
+                while len(cells) < 4:
+                    cells.append('')
+                all_rows.append(cells[:4])  # Only take the first 4 columns
+
+    return all_rows
