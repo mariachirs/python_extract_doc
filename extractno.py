@@ -1,3 +1,5 @@
+from docx import Document
+
 def extract_technologies_with_type(doc_path):
     doc = Document(doc_path)
     tech_entries = []
@@ -39,3 +41,9 @@ def extract_technologies_with_type(doc_path):
         }
         for entry in tech_entries
     }
+
+# Usage
+tech_dict = extract_technologies_with_type("MARTINS_Roni_CV_24-02-13.docx")
+
+from pprint import pprint
+pprint(tech_dict)
