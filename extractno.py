@@ -1,49 +1,68 @@
-from docx import Document
+REQUIRED_TYPES = [
+    "Micro-ordinateurs",
+    "Bases de données",
+    "Logiciels d’exploitation",
+    "Outils centraux",
+    "Langages de programmation",
+    "Logiciels de navigation Internet"
+]
 
-def extract_technologies_with_type(doc_path):
+def extract_technologies_by_required_types(doc_path, required_types):
     doc = Document(doc_path)
     tech_entries = []
     current_type = None
+    found_types = set()
 
     for table in doc.tables:
-        # Check for header in the first row
-        first_row_texts = [cell.text.strip() for cell in table.rows[0].cells]
-        if "Technologies" in first_row_texts and "Mois" in first_row_texts:
+        first_row = table.rows[0].cells
+        headers = [cell.text.strip() for cell in first_row]
+
+        # Find the right table with the expected headers
+        if "Technologies" in headers and "Mois" in headers:
+            # Process every row in this table
             for row in table.rows[1:]:
                 cells = row.cells
+                texts = [cell.text.strip() for cell in cells]
+                if all(not text for text in texts):
+                    continue
+
                 for i in range(0, len(cells), 2):
-                    tech_raw = cells[i].text.strip().replace('\xa0', ' ')
-                    mois_raw = cells[i+1].text.strip() if i+1 < len(cells) else ''
+                    tech = cells[i].text.strip() if i < len(cells) else ''
+                    mois = cells[i + 1].text.strip() if i + 1 < len(cells) else ''
 
-                    # Detect and update current type
-                    if tech_raw.endswith(":") and not mois_raw:
-                        current_type = tech_raw.replace(":", "").strip()
+                    # Detect section titles like "Outils centraux:"
+                    if tech.endswith(":") and not mois:
+                        section = tech.replace(":", "").strip()
+                        if section in required_types:
+                            current_type = section
+                            found_types.add(section)
+                        else:
+                            current_type = None
                         continue
 
-                    # Skip empty entries
-                    if not tech_raw or not mois_raw:
+                    elif mois.endswith(":") and not tech:
+                        section = mois.replace(":", "").strip()
+                        if section in required_types:
+                            current_type = section
+                            found_types.add(section)
+                        else:
+                            current_type = None
                         continue
 
-                    try:
-                        mois_int = int(mois_raw)
-                        tech_entries.append({
-                            "technology": tech_raw,
-                            "mois": mois_int,
-                            "type": current_type
-                        })
-                    except ValueError:
-                        continue  # skip rows where "mois" is not a number
+                    if tech and mois and current_type in required_types:
+                        try:
+                            mois_int = int(mois)
+                            tech_entries.append({
+                                "technology": tech,
+                                "mois": mois_int,
+                                "type": current_type
+                            })
+                        except ValueError:
+                            continue
 
-    return {
-        entry["technology"]: {
-            "mois": entry["mois"],
-            "type": entry["type"]
-        }
-        for entry in tech_entries
-    }
+    missing_types = set(required_types) - found_types
+    return tech_entries, missing_types
 
-# Usage
-tech_dict = extract_technologies_with_type("MARTINS_Roni_CV_24-02-13.docx")
-
-from pprint import pprint
-pprint(tech_dict)
+# Example usage:
+doc_path = "MARTINS_Roni_CV_24-02-13.docx"  # Change this path to your DOCX file
+entries, missing = extract_technologies_by_required_types(doc_path, REQUIRED_TYPES)
