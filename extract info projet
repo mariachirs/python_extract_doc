@@ -1,0 +1,27 @@
+from typing import List, Dict
+
+def extract_project_infos(file_path: str) -> List[Dict[str, str]]:
+    doc = Document(file_path)
+    results = []
+
+    for table in doc.tables:
+        table_data = {}
+        found = {"Projet": False, "Période": False, "Fonction": False}
+
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            for i, cell in enumerate(cells):
+                if "Projet" in cell and i + 1 < len(cells):
+                    table_data["Projet"] = cells[i + 1]
+                    found["Projet"] = True
+                if "Période" in cell and i + 1 < len(cells):
+                    table_data["Période"] = cells[i + 1]
+                    found["Période"] = True
+                if "Fonction" in cell and i + 1 < len(cells):
+                    table_data["Fonction"] = cells[i + 1]
+                    found["Fonction"] = True
+
+        if all(found.values()):
+            results.append(table_data)
+
+    return results
