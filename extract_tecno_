@@ -1,46 +1,47 @@
-def extract_technologies_from_tables(doc, stop_header="Langues parlées, écrites"):
-    raw_results = defaultdict(list)
-    current_category = None
-    stop_reached = False
+def create_4col_technologies_table(json_data):
+    """
+    Returns a 4-column docx table element (suitable for docxtpl context).
+    Each row contains 2 technologies and their months.
+    """
+    from docx import Document
 
-    category_pattern = re.compile(r"^(.*?):\s*$")
-    month_pattern = re.compile(r"^\d+$")
+    temp_doc = Document()
+    table = temp_doc.add_table(rows=1, cols=4)
+    table.style = 'Table Grid'
 
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-            if not cells:
-                continue
+    # Header row
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Technologies'
+    hdr_cells[1].text = 'Mois'
+    hdr_cells[2].text = 'Technologies'
+    hdr_cells[3].text = 'Mois'
 
-            # Stop condition
-            if any(stop_header.lower() in cell.lower() for cell in cells):
-                stop_reached = True
-                break
+    # Populate the table
+    for section in json_data.get("SectionTechnologies", []):
+        techs = section["Technologies"]
+        for i in range(0, len(techs), 2):
+            row_cells = table.add_row().cells
+            row_cells[0].text = techs[i]["NomTechnologie"]
+            row_cells[1].text = techs[i]["MoisExperience"]
+            if i + 1 < len(techs):
+                row_cells[2].text = techs[i + 1]["NomTechnologie"]
+                row_cells[3].text = techs[i + 1]["MoisExperience"]
+            else:
+                row_cells[2].text = ""
+                row_cells[3].text = ""
+    
+    return table._tbl  # raw XML element for docxtpl
+	
+	
+	===============================================
+from docxtpl import DocxTemplate
 
-            # Category header
-            if len(cells) == 1 and category_pattern.match(cells[0]):
-                current_category = category_pattern.match(cells[0]).group(1).strip()
-                continue
+doc = DocxTemplate("technologies_template.docx")
 
-            # Technology + month
-            if current_category and len(cells) == 2 and month_pattern.match(cells[1]):
-                tech = cells[0]
-                months = cells[1]
-                raw_results[current_category].append({
-                    "NomTechnologie": tech,
-                    "MoisExperience": months
-                })
+context = {
+    # your other context keys
+    'technologies_table': create_4col_technologies_table(json_data)
+}
 
-        if stop_reached:
-            break
-
-    # Final JSON structure
-    final_result = [
-        {
-            "Categorie": category,
-            "Technologies": technologies
-        }
-        for category, technologies in raw_results.items()
-    ]
-
-    return final_result
+doc.render(context)
+doc.save("rendered_output.docx")
