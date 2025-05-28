@@ -1,0 +1,49 @@
+import re
+import json
+from collections import defaultdict
+
+def extract_technologies_from_tables(doc, stop_header="Langues parlées, écrites"):
+    raw_results = defaultdict(list)
+    current_category = None
+    stop_reached = False
+
+    category_pattern = re.compile(r"^(.*?):\s*$")
+    month_pattern = re.compile(r"^\d+$")
+
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if not cells:
+                continue
+
+            # Stop condition
+            if any(stop_header.lower() in cell.lower() for cell in cells):
+                stop_reached = True
+                break
+
+            # Category header
+            if len(cells) == 1 and category_pattern.match(cells[0]):
+                current_category = category_pattern.match(cells[0]).group(1).strip()
+                continue
+
+            # Technology + month
+            if current_category and len(cells) == 2 and month_pattern.match(cells[1]):
+                tech = cells[0]
+                months = cells[1]
+                raw_results[current_category].append({
+                    "NomTechnologie": tech,
+                    "MoisExperience": months
+                })
+
+        if stop_reached:
+            break
+
+    final_result = [
+        {
+            "Categorie": category,
+            "Technologies": technologies
+        }
+        for category, technologies in raw_results.items()
+    ]
+
+    return json.dumps(final_result, ensure_ascii=True)
