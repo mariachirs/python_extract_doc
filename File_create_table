@@ -1,0 +1,83 @@
+from docx import Document
+from docx.shared import Pt
+from docx.oxml import OxmlElement
+
+def build_grouped_tech_table_into_docxtpl(docxtpl_obj, context):
+    """
+    Given a loaded DocxTemplate and a context["technologies"] structure,
+    build and inject a composed table element into context["technologies_table"].
+    """
+    temp_doc = Document()
+
+    for section in context["technologies"]:
+        # Add category heading
+        p = temp_doc.add_paragraph(section["categorie"])
+        run = p.runs[0]
+        run.bold = True
+        run.font.size = Pt(12)
+
+        # Create a 4-column table
+        table = temp_doc.add_table(rows=1, cols=4)
+        table.style = 'Table Grid'
+
+        hdr = table.rows[0].cells
+        hdr[0].text = "Technologies"
+        hdr[1].text = "Mois"
+        hdr[2].text = "Technologies"
+        hdr[3].text = "Mois"
+
+        # Fill table 2 by 2
+        for i in range(0, len(section["infos"]), 2):
+            row = table.add_row().cells
+            row[0].text = section["infos"][i]["nom"]
+            row[1].text = str(section["infos"][i]["mois"])
+            if i + 1 < len(section["infos"]):
+                row[2].text = section["infos"][i + 1]["nom"]
+                row[3].text = str(section["infos"][i + 1]["mois"])
+            else:
+                row[2].text = ""
+                row[3].text = ""
+
+        temp_doc.add_paragraph("")  # Spacing
+
+    # Wrap entire content into a single raw element
+    container = OxmlElement("w:group")
+    for element in list(temp_doc._element.body):
+        container.append(element)
+
+    # Inject into the context for rendering
+    context["technologies_table"] = container
+
+===================
+Usage Example
+python
+Copier
+Modifier
+from docxtpl import DocxTemplate
+
+doc = DocxTemplate("template.docx")
+
+context = {
+    "technologies": [
+        {
+            "categorie": "Micro Ordinateurs",
+            "infos": [
+                {"nom": "AMD Duron à CORE I7", "mois": 200}
+            ]
+        },
+        {
+            "categorie": "Langages de programmation",
+            "infos": [
+                {"nom": "C#", "mois": 21},
+                {"nom": "Python", "mois": 10}
+            ]
+        }
+    ]
+}
+
+# Build and inject
+build_grouped_tech_table_into_docxtpl(doc, context)
+
+# Render and save
+doc.render(context)
+doc.save("rendered_output.docx")
