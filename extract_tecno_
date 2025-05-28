@@ -1,28 +1,59 @@
-def extract_technologies_from_docx(doc, stop_header="Langues parlées, écrites"):
+def extract_technologies_flexible(doc, stop_header="Langues parlées, écrites"):
     category_pattern = re.compile(r"^(.*?):\s*$")
-    entry_pattern = re.compile(r"(.+?)\t(\d+)$")
+    tech_entry_tab = re.compile(r"(.+?)\t(\d+)$")
 
     results = defaultdict(list)
     current_category = None
+    buffer_line = None  # For pairwise matching (name followed by number)
+
+    # Extract all paragraphs and tables as a unified list of lines
+    all_lines = []
 
     for para in doc.paragraphs:
-        line = para.text.strip()
-        if not line:
-            continue
+        txt = para.text.strip()
+        if txt:
+            all_lines.append(txt)
 
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                txt = cell.text.strip()
+                if txt:
+                    all_lines.append(txt)
+
+    i = 0
+    while i < len(all_lines):
+        line = all_lines[i]
+
+        # Stop when reaching the "Langues parlées, écrites" section
         if stop_header.lower() in line.lower():
             break
 
+        # Category line
         category_match = category_pattern.match(line)
         if category_match:
             current_category = category_match.group(1).strip()
+            i += 1
             continue
 
+        # Format 1: tab-separated entry
         if current_category:
-            entry_match = entry_pattern.match(line)
-            if entry_match:
-                name = entry_match.group(1).strip()
-                months = int(entry_match.group(2))
+            tab_match = tech_entry_tab.match(line)
+            if tab_match:
+                name = tab_match.group(1).strip()
+                months = int(tab_match.group(2))
                 results[current_category].append((name, months))
+                i += 1
+                continue
+
+            # Format 2: pairwise name + numeric line
+            if i + 1 < len(all_lines):
+                next_line = all_lines[i + 1]
+                if next_line.isdigit():
+                    results[current_category].append((line, int(next_line)))
+                    i += 2
+                    continue
+
+        i += 1
 
     return dict(results)
