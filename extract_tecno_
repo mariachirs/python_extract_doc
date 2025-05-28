@@ -1,6 +1,9 @@
+import re
+from collections import defaultdict
+
 def extract_technologies_until_stop(text, stop_header="Langues parlées, écrites"):
-    category_pattern = re.compile(r"^(.*?):\s*$")
-    entry_pattern = re.compile(r"(.+?)\t(\d+)$")
+    category_pattern = re.compile(r"^(.*?):\s*$")         # Matches headers like "Langages de programmation :"
+    entry_pattern = re.compile(r"(.+?)\t(\d+)$")          # Matches lines like "C#    21" (tab-separated)
 
     results = defaultdict(list)
     current_category = None
@@ -10,16 +13,17 @@ def extract_technologies_until_stop(text, stop_header="Langues parlées, écrite
         if not line:
             continue
 
+        # Stop parsing if stop-header is found
         if stop_header.lower() in line.lower():
-            break  # Stop parsing once stop-header is found
+            break
 
-        # New category header
+        # Detect a new category
         category_match = category_pattern.match(line)
         if category_match:
             current_category = category_match.group(1).strip()
             continue
 
-        # Data line under current category
+        # Extract technology entry
         if current_category:
             entry_match = entry_pattern.match(line)
             if entry_match:
