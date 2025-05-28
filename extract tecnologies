@@ -1,0 +1,32 @@
+def extract_technologies_section(docx_path):
+    """
+    Extracts text after the 'Technologies Mois' table and before the 'Langues parlées, écrites' section.
+    Returns the extracted content as a string.
+    """
+    doc = Document(docx_path)
+    result_text = []
+    tech_table_found = False
+    start_extracting = False
+
+    # Step 1: Find the table that starts with 'Technologies Mois'
+    for table in doc.tables:
+        headers = [cell.text.strip() for cell in table.row_cells(0)]
+        if headers.count("Technologies") >= 2 and headers.count("Mois") >= 2:
+            tech_table_found = True
+            break
+
+    if not tech_table_found:
+        return "Technologies table not found."
+
+    # Step 2: After this table, start extracting until 'Langues parlées, écrites' appears
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if start_extracting:
+            if "Langues parlées, écrites" in text:
+                break
+            if text:
+                result_text.append(text)
+        elif text.startswith("Langages de programmation") or "TechnologiesGroupees" in text:
+            start_extracting = True
+
+    return "\n".join(result_text)
