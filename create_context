@@ -1,0 +1,83 @@
+from docxtpl import DocxTemplate, InlineImage
+from docx.shared import Cm
+from docx import Document
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+import os
+from io import BytesIO
+
+def build_technologies_table(doc, section_data):
+    """
+    Creates a 4-column table from the section data (2 technologies per row).
+    """
+    table = doc.add_table(rows=1, cols=4)
+    table.style = 'Table Grid'
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Technologies'
+    hdr_cells[1].text = 'Mois'
+    hdr_cells[2].text = 'Technologies'
+    hdr_cells[3].text = 'Mois'
+
+    for tech in section_data:
+        for i in range(0, len(tech['Technologies']), 2):
+            row_cells = table.add_row().cells
+            # First technology
+            row_cells[0].text = tech['Technologies'][i]["NomTechnologie"]
+            row_cells[1].text = tech['Technologies'][i]["MoisExperience"]
+            # Optional second technology
+            if i + 1 < len(tech['Technologies']):
+                row_cells[2].text = tech['Technologies'][i + 1]["NomTechnologie"]
+                row_cells[3].text = tech['Technologies'][i + 1]["MoisExperience"]
+            else:
+                row_cells[2].text = ""
+                row_cells[3].text = ""
+
+    return table
+
+def render_technologies_docx(template_path, output_path, json_data):
+    """
+    Renders a DOCX document using a template and fills in the 4-column technologies table.
+    """
+    tpl = DocxTemplate(template_path)
+
+    # Create a temporary document to generate the table (needed for docxtpl context)
+    tmp_doc = Document()
+    table = build_technologies_table(tmp_doc, json_data["SectionTechnologies"])
+
+    # Move the table into the docxtpl context
+    tbl_element = table._tbl
+    context = {
+        'technologies_table': tbl_element
+    }
+
+    tpl.render(context)
+    tpl.save(output_path)
+
+# Example JSON (simplified)
+json_data = {
+    "SectionTechnologies": [
+        {
+            "Categorie": "Langages de programmation :",
+            "Technologies": [
+                {"NomTechnologie": "C#", "MoisExperience": "21"},
+                {"NomTechnologie": "VISUAL BASIC .NET", "MoisExperience": "25"},
+                {"NomTechnologie": "PHP", "MoisExperience": "12"},
+                {"NomTechnologie": "SQL", "MoisExperience": "70"}
+            ]
+        },
+        {
+            "Categorie": "Bases de données :",
+            "Technologies": [
+                {"NomTechnologie": "ACCESS", "MoisExperience": "40"},
+                {"NomTechnologie": "MYSQL", "MoisExperience": "12"}
+            ]
+        }
+    ]
+}
+
+# Paths
+template_path = "technologies_template.docx"  # Use the one previously generated
+output_path = "rendered_technologies.docx"
+
+# Render the document
+render_technologies_docx(template_path, output_path, json_data)
