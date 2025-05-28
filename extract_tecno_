@@ -1,5 +1,5 @@
 def extract_technologies_from_tables(doc, stop_header="Langues parlées, écrites"):
-    results = defaultdict(list)
+    raw_results = defaultdict(list)
     current_category = None
     stop_reached = False
 
@@ -25,10 +25,22 @@ def extract_technologies_from_tables(doc, stop_header="Langues parlées, écrite
             # Technology + month
             if current_category and len(cells) == 2 and month_pattern.match(cells[1]):
                 tech = cells[0]
-                months = int(cells[1])
-                results[current_category].append((tech, months))
+                months = cells[1]
+                raw_results[current_category].append({
+                    "NomTechnologie": tech,
+                    "MoisExperience": months
+                })
 
         if stop_reached:
             break
 
-    return dict(results)
+    # Final JSON structure
+    final_result = [
+        {
+            "Categorie": category,
+            "Technologies": technologies
+        }
+        for category, technologies in raw_results.items()
+    ]
+
+    return final_result
