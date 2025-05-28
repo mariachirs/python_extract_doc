@@ -1,0 +1,80 @@
+from docx import Document
+from docx.shared import Pt
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+def build_grouped_tech_table(context):
+    """
+    Generate a single XML element combining multiple headings + 4-column tables
+    based on context["technologies"]
+    """
+    doc = Document()
+
+    for section in context["technologies"]:
+        # Add category heading
+        p = doc.add_paragraph(section["categorie"])
+        p.runs[0].bold = True
+        p.runs[0].font.size = Pt(12)
+
+        # Create 4-column table
+        table = doc.add_table(rows=1, cols=4)
+        table.style = 'Table Grid'
+
+        hdr = table.rows[0].cells
+        hdr[0].text = "Technologies"
+        hdr[1].text = "Mois"
+        hdr[2].text = "Technologies"
+        hdr[3].text = "Mois"
+
+        techs = section["infos"]
+        for i in range(0, len(techs), 2):
+            row = table.add_row().cells
+            row[0].text = techs[i]["nom"]
+            row[1].text = str(techs[i]["mois"])
+            if i + 1 < len(techs):
+                row[2].text = techs[i + 1]["nom"]
+                row[3].text = str(techs[i + 1]["mois"])
+            else:
+                row[2].text = ""
+                row[3].text = ""
+
+        doc.add_paragraph("")  # Add spacing between sections
+
+    # Extract the full XML of the doc body (to inject as a single object)
+    body = doc._element.body
+    merged = OxmlElement("w:tbl")  # Dummy wrapper (won't render itself)
+
+    # Append all children (paras and tables) to merged element
+    for child in list(body):
+        merged.append(child)
+
+    return merged
+
+  =============================
+  from docxtpl import DocxTemplate
+
+document = DocxTemplate("template.docx")  # with {{ technologies_table }}
+context = {
+    "technologies": [
+        {
+            "categorie": "Micro Ordinateurs",
+            "infos": [
+                {"nom": "AMD Duron à CORE I7", "mois": 200}
+            ]
+        },
+        {
+            "categorie": "Langages de programmation",
+            "infos": [
+                {"nom": "C#", "mois": 21},
+                {"nom": "Python", "mois": 10}
+            ]
+        }
+    ]
+}
+
+# Generate the composite element
+context["technologies_table"] = build_grouped_tech_table(context)
+
+# Render
+document.render(context)
+document.save("rendered_output.docx")
