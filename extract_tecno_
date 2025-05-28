@@ -1,0 +1,30 @@
+def extract_technologies_until_stop(text, stop_header="Langues parlées, écrites"):
+    category_pattern = re.compile(r"^(.*?):\s*$")
+    entry_pattern = re.compile(r"(.+?)\t(\d+)$")
+
+    results = defaultdict(list)
+    current_category = None
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        if stop_header.lower() in line.lower():
+            break  # Stop parsing once stop-header is found
+
+        # New category header
+        category_match = category_pattern.match(line)
+        if category_match:
+            current_category = category_match.group(1).strip()
+            continue
+
+        # Data line under current category
+        if current_category:
+            entry_match = entry_pattern.match(line)
+            if entry_match:
+                name = entry_match.group(1).strip()
+                months = int(entry_match.group(2))
+                results[current_category].append((name, months))
+
+    return dict(results)
