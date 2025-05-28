@@ -1,0 +1,21 @@
+def extract_top_lines(filepath, line_count=2):
+    """
+    Extrait les N premières lignes visibles (non vides) du corps du document.
+    """
+    doc = Document(filepath)
+    lines = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            lines.append(text)
+        if len(lines) >= line_count:
+            break
+
+    return lines
+
+# Exemple d'utilisation
+filepath = "MARTINS_Roni_CV_23-03_Not working.docx"
+resultat = extract_top_lines(filepath)
+for i, ligne in enumerate(resultat, 1):
+    print(f"Ligne {i} : {ligne}")
