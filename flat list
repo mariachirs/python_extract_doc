@@ -1,0 +1,35 @@
+def parse_to_flat_technology_list(raw_text):
+    """
+    Parses the raw technology section and returns a flat list of dictionaries with:
+    - Categorie
+    - NomTechnologie
+    - MoisExperience
+    """
+    lines = raw_text.strip().splitlines()
+    flat_list = []
+    current_category = "TechnologiesGroupees"
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Check if it's a new category
+        if '\t' not in line and re.match(r'^[\wÀ-ÿ \-/.()’]+$', line):
+            current_category = line
+        else:
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                nom = "\t".join(parts[:-1]).strip()
+                mois = parts[-1].strip()
+                try:
+                    mois = int(mois)
+                except ValueError:
+                    mois = None
+                flat_list.append({
+                    "Categorie": current_category,
+                    "NomTechnologie": nom,
+                    "MoisExperience": mois
+                })
+
+    return flat_list
