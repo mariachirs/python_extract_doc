@@ -1,0 +1,32 @@
+import re
+
+def parse_technologies_to_collection(raw_text):
+    """
+    Parses and structures raw extracted technology text into a uniform collection
+    called SectionTechnologies, each entry having Categorie, NomTechnologie, and MoisExperience.
+    """
+    lines = raw_text.strip().splitlines()
+    section_technologies = []
+    current_section = "TechnologiesGroupees"
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Detect a new section
+        if '\t' not in line and re.match(r'^[\wÀ-ÿ \-/.()]+$', line):
+            current_section = line
+        else:
+            # Parse line as key-value pair
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                nom_technologie = "\t".join(parts[:-1]).strip()
+                mois_experience = parts[-1].strip()
+                section_technologies.append({
+                    "Categorie": current_section,
+                    "NomTechnologie": nom_technologie,
+                    "MoisExperience": mois_experience
+                })
+
+    return section_technologies
