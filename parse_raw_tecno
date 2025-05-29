@@ -1,0 +1,33 @@
+def parse_to_nested_technology_sections(raw_text):
+    """
+    Parses the raw technology section into structured nested JSON format
+    """
+    lines = raw_text.strip().splitlines()
+    sections = []
+    current_section = {"Categorie": "TechnologiesGroupees", "Technologies": []}
+    sections.append(current_section)
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Check if it's a new section header (no tabs and mostly alphabetic)
+        if '\t' not in line and re.match(r'^[\wÀ-ÿ \-/.()’]+$', line):
+            current_section = {"Categorie": line, "Technologies": []}
+            sections.append(current_section)
+        else:
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                nom = "\t".join(parts[:-1]).strip()
+                mois = parts[-1].strip()
+                try:
+                    mois = int(mois)
+                except ValueError:
+                    mois = None
+                current_section["Technologies"].append({
+                    "NomTechnologie": nom,
+                    "MoisExperience": mois
+                })
+
+    return sections
