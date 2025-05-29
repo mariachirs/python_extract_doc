@@ -1,0 +1,28 @@
+def extract_text_between_headings_case_insensitive(docx_path, start_heading, end_heading):
+    """
+    Extracts lines of text between two headings (case-insensitive) in a DOCX file.
+    """
+    doc = Document(docx_path)
+    capture = False
+    result_lines = []
+
+    # Normalize the limits to lowercase
+    start_heading = start_heading.lower()
+    end_heading = end_heading.lower()
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+
+        lower_text = text.lower()
+
+        if start_heading in lower_text:
+            capture = True
+            continue
+        if end_heading in lower_text:
+            break
+        if capture:
+            result_lines.append(text)
+
+    return result_lines
