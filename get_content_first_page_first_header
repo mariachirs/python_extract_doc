@@ -1,0 +1,34 @@
+def get_first_page_header(file_path):
+    doc = Document(file_path)
+    section = doc.sections[0]
+
+    # Verifica se o cabeçalho da primeira página está ativado
+    header = section.first_page_header if section.different_first_page_header_footer else section.header
+
+    content = []
+
+    # Parágrafos diretos
+    for paragraph in header.paragraphs:
+        text = paragraph.text.strip()
+        if text:
+            content.append({"source": "paragraph", "text": text})
+
+    # Tabelas
+    for table in header.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    text = paragraph.text.strip()
+                    if text:
+                        content.append({"source": "table", "text": text})
+
+    return content
+
+# Exemplo de uso
+if __name__ == "__main__":
+    file_path = "Short_CV_Model.docx"
+    result = get_first_page_header(file_path)
+
+    print("=== FIRST PAGE HEADER CONTENT ===")
+    for item in result:
+        print(f"[{item['source'].upper()}] {item['text']}")
