@@ -1,0 +1,48 @@
+✅ Method 1 – Extract Employee Name by Position
+python
+Copier
+Modifier
+from docx import Document
+
+def extract_employee_name_by_position(doc_path):
+    """
+    Extracts the employee name from the DOCX header based on position.
+    Assumes the name is the first non-empty line in the header.
+    """
+    document = Document(doc_path)
+
+    for section in document.sections:
+        header = section.header
+        non_empty_lines = [p.text.strip() for p in header.paragraphs if p.text.strip()]
+        
+        if non_empty_lines:
+            return non_empty_lines[0]  # First non-empty line assumed to be the name
+
+    return "No name found based on position."
+✅ Method 2 – Extract Employee Title by Position
+python
+Copier
+Modifier
+def extract_employee_title_by_position(doc_path):
+    """
+    Extracts the employee title from the DOCX header based on position.
+    Assumes the title is the second non-empty line in the header.
+    """
+    document = Document(doc_path)
+
+    for section in document.sections:
+        header = section.header
+        non_empty_lines = [p.text.strip() for p in header.paragraphs if p.text.strip()]
+        
+        if len(non_empty_lines) >= 2:
+            return non_empty_lines[1]  # Second non-empty line assumed to be the title
+
+    return "No title found based on position."
+✅ Optional: Combined Function
+python
+Copier
+Modifier
+def extract_name_and_title(doc_path):
+    name = extract_employee_name_by_position(doc_path)
+    title = extract_employee_title_by_position(doc_path)
+    return name, title
