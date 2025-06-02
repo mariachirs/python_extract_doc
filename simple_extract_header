@@ -1,0 +1,50 @@
+from docx import Document
+
+def find_name_and_function_header(file_path):
+    document = Document(file_path)
+
+    for idx, section in enumerate(document.sections):
+        # Verifica se a seção tem cabeçalho específico para a primeira página
+        header = section.first_page_header if section.different_first_page_header_footer else section.header
+        lines = []
+
+        # Parágrafos
+        for paragraph in header.paragraphs:
+            text = paragraph.text.strip()
+            if text:
+                lines.append(text)
+
+        # Tabelas
+        for table in header.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        text = paragraph.text.strip()
+                        if text:
+                            lines.append(text)
+
+        # Retorna se encontrar exatamente 2 linhas
+        if len(lines) == 2:
+            return {
+                "section_index": idx,
+                "name": lines[0],
+                "function": lines[1]
+            }
+
+    return {
+        "section_index": None,
+        "name": None,
+        "function": None
+    }
+
+# Exemplo de uso
+if __name__ == "__main__":
+    file_path = "Short_CV_Model.docx"
+    result = find_name_and_function_header(file_path)
+
+    if result["section_index"] is not None:
+        print(f"✅ Found in section {result['section_index']}")
+        print(f"Name    : {result['name']}")
+        print(f"Function: {result['function']}")
+    else:
+        print("❌ No valid header with exactly two lines found.")
