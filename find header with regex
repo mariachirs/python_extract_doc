@@ -1,0 +1,50 @@
+import re
+from docx import Document
+
+def is_likely_name(text):
+    # Ex: "Guy Bouchard", "Ana Maria", "João da Silva"
+    return bool(re.match(r"^[A-Z][a-zà-ÿ]+(?: [A-Z][a-zà-ÿ]+)*$", text.strip()))
+
+def is_likely_function(text):
+    # Ex: "Analyste-programmeur", "Développeur", "Chef de projet"
+    return bool(re.match(r"^[A-ZÀ-Ÿa-zà-ÿ].{2,}$", text.strip())) and not is_likely_name(text)
+
+def find_name_and_function_header(file_path):
+    document = Document(file_path)
+
+    for idx, section in enumerate(document.sections):
+        header = section.first_page_header if section.different_first_page_header_footer else section.header
+        lines = []
+
+        # Parágrafos
+        for paragraph in header.paragraphs:
+            text = paragraph.text.strip()
+            if text:
+                lines.append(text)
+
+        # Tabelas
+        for table in header.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        text = paragraph.text.strip()
+                        if text:
+                            lines.append(text)
+
+        # Verifica se tem exatamente duas linhas
+        if len(lines) == 2:
+            line1, line2 = lines
+            if (is_likely_name(line1) and is_likely_function(line2)) or \
+               (is_likely_function(line1) and is_likely_name(line2)):
+                return {
+                    "section_index": idx,
+                    "name": line1 if is_likely_name(line1) else line2,
+                    "function": line2 if is_likely_function(line2) else line1
+                }
+
+    return {
+        "section_index": None,
+        "name": None,
+        "function": None
+    }
+    
