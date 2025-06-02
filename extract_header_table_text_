@@ -1,0 +1,18 @@
+def extract_header_table_text(doc_path):
+    """
+    Extracts all text content found inside tables in the header of a DOCX file.
+    Returns a list of lines (one per cell).
+    """
+    document = Document(doc_path)
+    extracted_text = []
+
+    for section in document.sections:
+        header = section.header
+        for table in header.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    if cell_text:
+                        extracted_text.append(cell_text)
+
+    return extracted_text
