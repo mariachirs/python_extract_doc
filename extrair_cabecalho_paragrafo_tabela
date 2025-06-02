@@ -1,0 +1,32 @@
+from docx import Document
+
+def get_header_as_string(file_path):
+    document = Document(file_path)
+    header_text = []
+
+    for section in document.sections:
+        header = section.header
+
+        # 1. Parágrafos diretos no cabeçalho
+        for paragraph in header.paragraphs:
+            text = paragraph.text.strip()
+            if text:
+                header_text.append(text)
+
+        # 2. Conteúdo de tabelas no cabeçalho
+        for table in header.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        text = paragraph.text.strip()
+                        if text:
+                            header_text.append(text)
+
+    return "\n".join(header_text)
+
+# Exemplo de uso
+if __name__ == "__main__":
+    file_path = "Short_CV_Model.docx"
+    header_content = get_header_as_string(file_path)
+    print("=== HEADER CONTENT ===")
+    print(header_content)
