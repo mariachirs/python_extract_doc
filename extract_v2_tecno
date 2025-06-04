@@ -1,0 +1,107 @@
+✅ Método 1 – Extrair conteúdo entre marcadores (sem mudanças)
+python
+Copier
+Modifier
+def extract_text_between_markers_flexible(doc, start_marker="Résumé des technologies", stop_marker="Formations et perfectionnements"):
+    from io import StringIO
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    def iter_block_items(doc):
+        for child in doc.element.body:
+            if child.tag.endswith('}tbl'):
+                yield Table(child, doc)
+            elif child.tag.endswith('}p'):
+                yield Paragraph(child, doc)
+
+    buffer = StringIO()
+    capturing = False
+
+    for block in iter_block_items(doc):
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if not capturing and start_marker in text:
+                capturing = True
+            if capturing:
+                if stop_marker in text:
+                    break
+                if text:
+                    buffer.write(text + "\n")
+        elif isinstance(block, Table):
+            for row in block.rows:
+                row_text = [cell.text.strip() for cell in row.cells]
+                if not capturing and any(start_marker in cell for cell in row_text):
+                    capturing = True
+                if capturing and any(stop_marker in cell for cell in row_text):
+                    return buffer.getvalue()
+                if capturing:
+                    buffer.write("\t".join(row_text) + "\n")
+
+    return buffer.getvalue()
+✅ Método 2 – Extrair tecnologias com nomes de campos atualizados
+python
+Copier
+Modifier
+import re
+
+def extract_technologies_structured_with_labels(raw_text):
+    lines = raw_text.splitlines()
+    categories = {}
+    current_left_category = None
+    current_right_category = None
+
+    for line in lines:
+        line = line.strip()
+        if "Résumé des technologies" in line or "Technologies\tMois" in line or not line:
+            continue
+
+        parts = line.split("\t")
+
+        if len(parts) == 4 and not any(re.search(r'\d', p) for p in parts):
+            current_left_category = parts[0]
+            current_right_category = parts[3]
+            if current_left_category:
+                categories.setdefault(current_left_category, [])
+            if current_right_category:
+                categories.setdefault(current_right_category, [])
+            continue
+
+        if current_left_category:
+            try:
+                name1 = parts[0].strip()
+                mois1 = int(parts[1].strip())
+                categories[current_left_category].append({"NomTechnologie": name1, "MoisExperience": mois1})
+            except (IndexError, ValueError):
+                pass
+
+        if current_right_category:
+            try:
+                name2 = parts[2].strip()
+                mois2 = int(parts[3].strip())
+                categories[current_right_category].append({"NomTechnologie": name2, "MoisExperience": mois2})
+            except (IndexError, ValueError):
+                pass
+
+    return categories
+✅ Exemplo de uso (com nomes atualizados)
+python
+Copier
+Modifier
+from docx import Document
+import pandas as pd
+
+doc = Document("CV-Gabarit-LGS-2025.docx")
+raw_text = extract_text_between_markers_flexible(doc)
+tech_data = extract_technologies_structured_with_labels(raw_text)
+
+rows = []
+for categorie, items in tech_data.items():
+    for tech in items:
+        rows.append({
+            "Categorie": categorie,
+            "NomTechnologie": tech["NomTechnologie"],
+            "MoisExperience": tech["MoisExperience"]
+        })
+
+df = pd.DataFrame(rows)
+print(df[df["Categorie"] == "Frameworks, protocoles et bibliothèques"])
