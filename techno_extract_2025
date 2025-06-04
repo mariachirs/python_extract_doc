@@ -59,7 +59,8 @@ def extrair_texto_tecnologias(doc_path):
 
 def organizar_tecnologias_por_categoria(texto_cru):
     """
-    Organiza o texto extraído em uma lista de dicionários estruturados por categoria.
+    Organiza o texto extraído em uma lista de dicionários estruturados por categoria,
+    lidando com ruídos e categorias que vêm com colunas múltiplas não-numéricas.
     """
     linhas = texto_cru.strip().splitlines()
     resultado = []
@@ -68,19 +69,21 @@ def organizar_tecnologias_por_categoria(texto_cru):
     for linha in linhas:
         partes = linha.split("\t")
         partes = [p.strip() for p in partes if p.strip()]
+
+        # Categoria: apenas 1 parte OU a segunda parte não é número
         if len(partes) == 1:
             categoria_atual = partes[0]
-        elif len(partes) == 2 and categoria_atual:
-            tecnologia, meses = partes
-            try:
-                meses = int(meses)
-            except ValueError:
-                meses = None
-            resultado.append({
-                "Categorie": categoria_atual,
-                "NomTechnologie": tecnologia,
-                "MoisExperience": meses
-            })
+        elif len(partes) == 2:
+            tecnologia, possivel_mes = partes
+            if possivel_mes.isdigit() and categoria_atual:
+                resultado.append({
+                    "Categorie": categoria_atual,
+                    "NomTechnologie": tecnologia,
+                    "MoisExperience": int(possible_mes)
+                })
+            else:
+                # Trata como nova categoria se a segunda coluna não é número
+                categoria_atual = f"{tecnologia} {possivel_mes}".strip()
 
     return resultado
 ✅ Exemplo de uso:
