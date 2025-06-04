@@ -8,7 +8,7 @@ def extrair_texto_tecnologias(doc_path):
     """
     doc = Document(doc_path)
 
-    # Localizar a tabela com o texto-chave
+    # Localizar a tabela com o título desejado
     target_table = None
     for table in doc.tables:
         for row in table.rows:
@@ -26,7 +26,7 @@ def extrair_texto_tecnologias(doc_path):
     if len(target_table.rows[0].cells) != 5:
         raise ValueError("A tabela encontrada não possui exatamente 5 colunas.")
 
-    # Verificação de título e cabeçalho
+    # Verificações das duas primeiras linhas
     if "résumé des technologies" not in target_table.cell(0, 0).text.lower():
         raise ValueError("A primeira linha não contém 'Résumé des technologies'")
     if not any("technologies" in cell.text.lower() for cell in target_table.rows[1].cells):
@@ -34,10 +34,10 @@ def extrair_texto_tecnologias(doc_path):
     if not any("mois" in cell.text.lower() for cell in target_table.rows[1].cells):
         raise ValueError("A segunda linha não contém 'Mois'")
 
-    # Ignorar as duas primeiras linhas
+    # Ignorar título e cabeçalho
     start_index = 2
 
-    # Colunas da esquerda (1–2)
+    # Coletar texto das colunas 0–1 (esquerda)
     texto_esquerda = []
     for i in range(start_index, len(target_table.rows)):
         col0 = target_table.cell(i, 0).text.strip()
@@ -45,7 +45,7 @@ def extrair_texto_tecnologias(doc_path):
         if col0 or col1:
             texto_esquerda.append(f"{col0}\t{col1}")
 
-    # Colunas da direita (4–5)
+    # Coletar texto das colunas 3–4 (direita)
     texto_direita = []
     for i in range(start_index, len(target_table.rows)):
         col3 = target_table.cell(i, 3).text.strip()
@@ -53,6 +53,7 @@ def extrair_texto_tecnologias(doc_path):
         if col3 or col4:
             texto_direita.append(f"{col3}\t{col4}")
 
+    # Concatenar o texto das duas partes
     return "\n".join(texto_esquerda + texto_direita)
 
 
@@ -82,3 +83,13 @@ def organizar_tecnologias_por_categoria(texto_cru):
             })
 
     return resultado
+✅ Exemplo de uso:
+python
+Copier
+Modifier
+# Caminho para seu arquivo DOCX
+doc_path = "CV-Gabarit-LGS-2025.docx"
+
+# Etapas
+texto = extrair_texto_tecnologias(doc_path)
+dados = organizar_tecnologias_por_categoria(texto)
