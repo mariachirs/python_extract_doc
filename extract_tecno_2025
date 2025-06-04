@@ -1,0 +1,101 @@
+ Método 1 — Extrair texto entre dois marcadores
+python
+Copier
+Modifier
+from io import StringIO
+from docx.table import Table
+from docx.text.paragraph import Paragraph
+
+def iter_block_items(doc):
+    for child in doc.element.body:
+        if child.tag.endswith('}tbl'):
+            yield Table(child, doc)
+        elif child.tag.endswith('}p'):
+            yield Paragraph(child, doc)
+
+def extract_text_between_markers(doc, start_marker="Résumé des technologies", stop_marker="Formations et perfectionnements"):
+    buffer = StringIO()
+    capturing = False
+
+    for block in iter_block_items(doc):
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if start_marker in text:
+                capturing = True
+                continue
+            if stop_marker in text:
+                break
+            if capturing and text:
+                buffer.write(text + "\n")
+        elif isinstance(block, Table) and capturing:
+            for row in block.rows:
+                row_text = [cell.text.strip() for cell in row.cells]
+                if any(stop_marker in cell for cell in row_text):
+                    capturing = False
+                    break
+                buffer.write("\t".join(row_text) + "\n")
+        if not capturing:
+            continue
+
+    return buffer.getvalue()
+✅ Método 2 — Extrair categorias dinamicamente e associar Nome/Meses
+python
+Copier
+Modifier
+import re
+
+def extract_technologies_dynamic(raw_text):
+    categories = {}
+    current_category = None
+
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line or "Technologies\tMois" in line:
+            continue
+
+        parts = line.split("\t")
+
+        # Categoria: linha sem números, com poucas palavras, sem tabulação ou na primeira célula
+        if '\t' not in line and re.match(r'^[\wÀ-ÿ /().\-]+$', line) and not re.search(r'\d', line):
+            current_category = line
+            if current_category not in categories:
+                categories[current_category] = []
+            continue
+
+        # Também detecta categoria se estiver como primeira ou última célula isolada
+        if len(parts) == 1 and not re.search(r'\d', parts[0]):
+            current_category = parts[0]
+            if current_category not in categories:
+                categories[current_category] = []
+            continue
+
+        # Tenta extrair pares Nome/Meses se categoria estiver ativa
+        if current_category:
+            for i in (0, 2):  # examina colunas esquerda e direita
+                try:
+                    name = parts[i].strip()
+                    mois = int(parts[i + 1].strip())
+                    if name:
+                        categories[current_category].append({"Nome": name, "Meses": mois})
+                except (IndexError, ValueError):
+                    continue
+
+    return categories
+✅ Exemplo de uso
+python
+Copier
+Modifier
+from docx import Document
+
+doc = Document("CV-Gabarit-LGS-2025.docx")
+raw_text = extract_text_between_markers(doc)
+tech_data = extract_technologies_dynamic(raw_text)
+
+# Opcional: converter para DataFrame
+import pandas as pd
+rows = []
+for cat, items in tech_data.items():
+    for tech in items:
+        rows.append({"Categoria": cat, "Nome": tech["Nome"], "Meses": tech["Meses"]})
+df = pd.DataFrame(rows)
+Se quiser, posso te entregar isso como um único script .py ou .ipynb. Deseja?
