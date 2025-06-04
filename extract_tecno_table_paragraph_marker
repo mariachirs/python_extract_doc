@@ -1,0 +1,56 @@
+✅ Método Melhorado: Extrair texto entre dois marcadores, mesmo se estiverem em tabelas
+Este método procura em parágrafos e em células de tabelas e começa a coletar assim que qualquer bloco (incluindo tabelas) contiver o start_marker.
+
+python
+Copier
+Modifier
+from io import StringIO
+from docx.table import Table
+from docx.text.paragraph import Paragraph
+
+def iter_block_items(doc):
+    for child in doc.element.body:
+        if child.tag.endswith('}tbl'):
+            yield Table(child, doc)
+        elif child.tag.endswith('}p'):
+            yield Paragraph(child, doc)
+
+def extract_text_between_markers_flexible(doc, start_marker="Résumé des technologies", stop_marker="Formations et perfectionnements"):
+    buffer = StringIO()
+    capturing = False
+
+    for block in iter_block_items(doc):
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if not capturing and start_marker in text:
+                capturing = True
+            if capturing:
+                if stop_marker in text:
+                    break
+                if text:
+                    buffer.write(text + "\n")
+
+        elif isinstance(block, Table):
+            for row in block.rows:
+                row_text = [cell.text.strip() for cell in row.cells]
+
+                # Detectar o marcador inicial ou final dentro de qualquer célula
+                if not capturing and any(start_marker in cell for cell in row_text):
+                    capturing = True
+                if capturing and any(stop_marker in cell for cell in row_text):
+                    return buffer.getvalue()
+
+                if capturing:
+                    buffer.write("\t".join(row_text) + "\n")
+
+    return buffer.getvalue()
+🔄 Use com seu método dinâmico:
+python
+Copier
+Modifier
+# Exemplo de uso
+from docx import Document
+
+doc = Document("CV-Gabarit-LGS-2025.docx")
+raw_text = extract_text_between_markers_flexible(doc)
+tech_data = extract_technologies_dynamic(raw_text)
