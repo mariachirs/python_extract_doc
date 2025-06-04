@@ -1,0 +1,28 @@
+from docx import Document
+
+def table_contains_text(doc_path: str, search_text: str) -> bool:
+    """
+    Vérifie si une table dans un document DOCX contient un texte spécifique.
+
+    Args:
+        doc_path (str): Chemin vers le fichier DOCX.
+        search_text (str): Texte à rechercher dans les tables.
+
+    Returns:
+        bool: True si le texte est trouvé dans une table, sinon False.
+    """
+    document = Document(doc_path)
+    normalized_search = search_text.strip().lower()
+
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if normalized_search in cell.text.strip().lower():
+                    return True
+    return False
+
+# Exemple d'utilisation
+if __name__ == "__main__":
+    docx_path = "CV-Gabarit-LGS-2025.docx"
+    search = "Résumé des technologies"
+    print("Texte trouvé dans une table:", table_contains_text(docx_path, search))
