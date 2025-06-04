@@ -1,0 +1,79 @@
+ Código Python:
+python
+Copier
+Modifier
+from docx import Document
+
+def extrair_texto_tecnologias(doc_path):
+    doc = Document(doc_path)
+
+    # Localizar a tabela com o título
+    target_table = None
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if "Résumé des technologies" in cell.text:
+                    target_table = table
+                    break
+            if target_table:
+                break
+        if target_table:
+            break
+
+    if not target_table:
+        raise ValueError("Tabela com 'Résumé des technologies' não encontrada.")
+
+    if len(target_table.rows[0].cells) != 5:
+        raise ValueError("A tabela não possui exatamente 5 colunas.")
+
+    # Ignorar título e cabeçalho
+    start_index = 2
+
+    # Extrair texto das colunas 0–1 (esquerda)
+    texto_esquerda = []
+    for i in range(start_index, len(target_table.rows)):
+        col0 = target_table.cell(i, 0).text.strip()
+        col1 = target_table.cell(i, 1).text.strip()
+        if col0 or col1:
+            texto_esquerda.append(f"{col0}\t{col1}")
+
+    # Extrair texto das colunas 3–4 (direita)
+    texto_direita = []
+    for i in range(start_index, len(target_table.rows)):
+        col3 = target_table.cell(i, 3).text.strip()
+        col4 = target_table.cell(i, 4).text.strip()
+        if col3 or col4:
+            texto_direita.append(f"{col3}\t{col4}")
+
+    return "\n".join(texto_esquerda + texto_direita)
+
+
+def organizar_tecnologias_por_categoria(texto_cru):
+    linhas = texto_cru.strip().splitlines()
+    resultado = []
+    categoria_atual = None
+
+    for linha in linhas:
+        partes = linha.split("\t")
+        partes = [p.strip() for p in partes if p.strip()]
+        if len(partes) == 1:
+            categoria_atual = partes[0]
+        elif len(partes) == 2 and categoria_atual:
+            tecnologia, meses = partes
+            try:
+                meses = int(meses)
+            except ValueError:
+                meses = None
+            resultado.append({
+                "Categorie": categoria_atual,
+                "NomTechnologie": tecnologia,
+                "MoisExperience": meses
+            })
+
+    return resultado
+✅ Exemplo de uso:
+python
+Copier
+Modifier
+texto = extrair_texto_tecnologias("CV-Gabarit-LGS-2025.docx")
+dados = organizar_tecnologias_por_categoria(texto)
