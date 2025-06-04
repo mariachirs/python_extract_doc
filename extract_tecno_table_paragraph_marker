@@ -1,6 +1,10 @@
-✅ Método Melhorado: Extrair texto entre dois marcadores, mesmo se estiverem em tabelas
-Este método procura em parágrafos e em células de tabelas e começa a coletar assim que qualquer bloco (incluindo tabelas) contiver o start_marker.
+Claro! Aqui estão os dois métodos completos que você pode usar diretamente para:
 
+Extrair o texto entre dois marcadores, mesmo que estejam dentro de tabelas.
+
+Organizar as tecnologias por categoria, de forma dinâmica e sem depender de uma lista fixa.
+
+✅ Método 1: extract_text_between_markers_flexible
 python
 Copier
 Modifier
@@ -34,7 +38,7 @@ def extract_text_between_markers_flexible(doc, start_marker="Résumé des techno
             for row in block.rows:
                 row_text = [cell.text.strip() for cell in row.cells]
 
-                # Detectar o marcador inicial ou final dentro de qualquer célula
+                # Detectar início ou fim do trecho em células de tabela
                 if not capturing and any(start_marker in cell for cell in row_text):
                     capturing = True
                 if capturing and any(stop_marker in cell for cell in row_text):
@@ -44,13 +48,73 @@ def extract_text_between_markers_flexible(doc, start_marker="Résumé des techno
                     buffer.write("\t".join(row_text) + "\n")
 
     return buffer.getvalue()
-🔄 Use com seu método dinâmico:
+✅ Método 2: extract_technologies_dynamic
 python
 Copier
 Modifier
-# Exemplo de uso
+import re
+
+def extract_technologies_dynamic(raw_text):
+    categories = {}
+    current_category = None
+
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line or "Technologies\tMois" in line:
+            continue
+
+        parts = line.split("\t")
+
+        # Detectar nova categoria se for texto puro e sem números
+        if '\t' not in line and re.match(r'^[\wÀ-ÿ /().\-]+$', line) and not re.search(r'\d', line):
+            current_category = line
+            if current_category not in categories:
+                categories[current_category] = []
+            continue
+
+        # Categoria também pode estar sozinha na célula
+        if len(parts) == 1 and not re.search(r'\d', parts[0]):
+            current_category = parts[0]
+            if current_category not in categories:
+                categories[current_category] = []
+            continue
+
+        # Tenta extrair Nome e Meses
+        if current_category:
+            for i in (0, 2):
+                try:
+                    name = parts[i].strip()
+                    mois = int(parts[i + 1].strip())
+                    if name:
+                        categories[current_category].append({"Nome": name, "Meses": mois})
+                except (IndexError, ValueError):
+                    continue
+
+    return categories
+✅ Exemplo de uso com python-docx
+python
+Copier
+Modifier
 from docx import Document
 
+# Carregar documento
 doc = Document("CV-Gabarit-LGS-2025.docx")
+
+# Extrair texto e depois tecnologias
 raw_text = extract_text_between_markers_flexible(doc)
 tech_data = extract_technologies_dynamic(raw_text)
+
+# Exibir como DataFrame (opcional)
+import pandas as pd
+
+rows = []
+for categoria, items in tech_data.items():
+    for tech in items:
+        rows.append({
+            "Categoria": categoria,
+            "Nome": tech["Nome"],
+            "Meses": tech["Meses"]
+        })
+
+df = pd.DataFrame(rows)
+print(df.head())
