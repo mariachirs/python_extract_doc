@@ -1,0 +1,68 @@
+✅ 1. extract_raw_technology_lines
+This method extracts raw lines after Technologies Mois Technologies Mois.
+
+python
+Copier
+Modifier
+from docx import Document
+import re
+
+def extract_raw_technology_lines(docx_path):
+    document = Document(docx_path)
+    is_collecting = False
+    raw_lines = []
+
+    start_trigger = re.compile(r'^Technologies\s+Mois\s+Technologies\s+Mois$', re.IGNORECASE)
+
+    for table in document.tables:
+        for row in table.rows:
+            line = '\t'.join(cell.text.strip() for cell in row.cells if cell.text.strip())
+
+            if start_trigger.match(line):
+                is_collecting = True
+                continue
+
+            if is_collecting:
+                raw_lines.append(line)
+
+    return raw_lines
+✅ 2. parse_technology_lines_to_dicts
+This method receives the raw lines and returns a flat list of dictionaries like:
+
+json
+Copier
+Modifier
+{"categorie": "Langages de programmation", "technologie": "C#", "mois": 21}
+python
+Copier
+Modifier
+import re
+
+def parse_technology_lines_to_dicts(raw_lines):
+    results = []
+    current_category = None
+    tech_entry_pattern = re.compile(r'^(.+?)\s+(\d+)$')
+
+    for line in raw_lines:
+        if not line:
+            continue
+
+        match = tech_entry_pattern.match(line)
+        if match:
+            # Valid technology + month entry
+            technologie = match.group(1).strip()
+            mois = int(match.group(2))
+
+            if current_category is None:
+                current_category = "Sans catégorie"
+
+            results.append({
+                "categorie": current_category,
+                "technologie": technologie,
+                "mois": mois
+            })
+        else:
+            # New category line (assuming it has only one cell of text)
+            current_category = line.strip(" :")
+
+    return results
