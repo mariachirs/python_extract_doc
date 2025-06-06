@@ -1,0 +1,94 @@
+from docx import Document
+from docx.shared import Inches, Pt
+from math import ceil
+from collections import defaultdict
+
+def insert_technologies_table(doc, placeholder_paragraph, tech_data):
+    grouped = defaultdict(list)
+    for item in tech_data:
+        grouped[item["categorie"]].append({"nom": item["nom"], "mois": item["mois"]})
+
+    # Construir lista de linhas com categorias e tecnologias
+    rows = []
+    for cat, items in grouped.items():
+        rows.append({"is_category": True, "categorie": cat})
+        for item in items:
+            rows.append({"is_category": False, "nom": item["nom"], "mois": item["mois"]})
+
+    mid = ceil(len(rows) / 2)
+    left_rows = rows[:mid]
+    right_rows = rows[mid:]
+
+    # Inserir tabela antes do parágrafo com a tag
+    table = placeholder_paragraph.insert_paragraph_before().insert_table(rows=0, cols=4)
+    table.autofit = False
+    widths = [Inches(2), Inches(0.7), Inches(2), Inches(0.7)]
+
+    # Cabeçalho
+    hdr_cells = table.add_row().cells
+    headers = ['Technologie', 'Mois', 'Technologie', 'Mois']
+    for i, cell in enumerate(hdr_cells):
+        cell.text = headers[i]
+        run = cell.paragraphs[0].runs[0]
+        run.font.bold = True
+        run.font.size = Pt(10)
+        cell.width = widths[i]
+
+    # Estilo sem bordas
+    def set_cell_style(cell, bold=False):
+        for paragraph in cell.paragraphs:
+            for run in paragraph.runs:
+                run.font.size = Pt(10)
+                run.font.bold = bold
+
+    # Preenchimento linha a linha
+    for i in range(max(len(left_rows), len(right_rows))):
+        row_cells = table.add_row().cells
+
+        if i < len(left_rows):
+            item = left_rows[i]
+            if item.get("is_category"):
+                row_cells[0].text = item["categorie"]
+                row_cells[1].text = ""
+                set_cell_style(row_cells[0], bold=True)
+            else:
+                row_cells[0].text = item["nom"]
+                row_cells[1].text = str(item["mois"])
+                set_cell_style(row_cells[0])
+                set_cell_style(row_cells[1])
+        else:
+            row_cells[0].text = ""
+            row_cells[1].text = ""
+
+        if i < len(right_rows):
+            item = right_rows[i]
+            if item.get("is_category"):
+                row_cells[2].text = item["categorie"]
+                row_cells[3].text = ""
+                set_cell_style(row_cells[2], bold=True)
+            else:
+                row_cells[2].text = item["nom"]
+                row_cells[3].text = str(item["mois"])
+                set_cell_style(row_cells[2])
+                set_cell_style(row_cells[3])
+        else:
+            row_cells[2].text = ""
+            row_cells[3].text = ""
+
+        for j in range(4):
+            row_cells[j].width = widths[j]
+
+    # Remover a tag original
+    placeholder_paragraph.clear()
+🧪 Como usar
+python
+Copier
+Modifier
+doc = Document("seu_modelo.docx")
+
+for p in doc.paragraphs:
+    if "{table_technologies}" in p.text:
+        insert_technologies_table(doc, p, tech_data)
+        break
+
+doc.save("saida.docx")
