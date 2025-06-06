@@ -66,3 +66,25 @@ def parse_technology_lines_to_dicts(raw_lines):
             current_category = line.strip(" :")
 
     return results
+
+
+====================
+
+def extract_raw_technology_lines(document: DocxDocument):
+    is_collecting = False
+    raw_lines = []
+
+    start_trigger = re.compile(r'^Technologies\s+Mois\s+Technologies\s+Mois$', re.IGNORECASE)
+
+    for table in document.tables:
+        for row in table.rows:
+            line = '\t'.join(cell.text.strip() for cell in row.cells if cell.text.strip())
+
+            if start_trigger.match(line):
+                is_collecting = True
+                continue
+
+            if is_collecting:
+                raw_lines.append(line)
+
+    return raw_lines
