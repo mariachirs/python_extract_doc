@@ -1,17 +1,29 @@
-def insert_technologies_table(placeholder_paragraph, tech_data):
-    # Constrói lista de linhas com categorias e tecnologias
+from docx.shared import Inches, Pt
+from math import ceil
+
+def insert_technologies_table(doc, tech_data):
+    # Localiza o parágrafo com a tag
+    placeholder_paragraph = None
+    for p in doc.paragraphs:
+        if "{table_technologies}" in p.text:
+            placeholder_paragraph = p
+            break
+
+    if not placeholder_paragraph:
+        raise ValueError("Marcador {table_technologies} não encontrado.")
+
+    # Monta linhas com categorias e tecnologias
     rows = []
     for bloc in tech_data:
-        rows.append({"is_category": True, "categorie": bloc["categorie"]})
-        for info in bloc["infos"]:
-            rows.append({"is_category": False, "nom": info["nom"], "mois": info["mois"]})
+        rows.append({"is_category": True, "categorie": bloc.categorie})
+        for info in bloc.infos:
+            rows.append({"is_category": False, "nom": info.nom, "mois": info.mois})
 
-    # Divide verticalmente
     mid = ceil(len(rows) / 2)
     left_rows = rows[:mid]
     right_rows = rows[mid:]
 
-    # Cria tabela antes do parágrafo com marcador
+    # Cria a tabela antes do marcador
     table = placeholder_paragraph.insert_paragraph_before().insert_table(rows=0, cols=4)
     table.autofit = False
     widths = [Inches(2), Inches(0.7), Inches(2), Inches(0.7)]
@@ -26,17 +38,16 @@ def insert_technologies_table(placeholder_paragraph, tech_data):
         run.font.size = Pt(10)
         cell.width = widths[i]
 
-    # Estilo simples sem bordas
     def set_cell_style(cell, bold=False):
         for paragraph in cell.paragraphs:
             for run in paragraph.runs:
                 run.font.size = Pt(10)
                 run.font.bold = bold
 
-    # Preenchimento da tabela
     for i in range(max(len(left_rows), len(right_rows))):
         row_cells = table.add_row().cells
 
+        # Lado esquerdo
         if i < len(left_rows):
             item = left_rows[i]
             if item["is_category"]:
@@ -52,6 +63,7 @@ def insert_technologies_table(placeholder_paragraph, tech_data):
             row_cells[0].text = ""
             row_cells[1].text = ""
 
+        # Lado direito
         if i < len(right_rows):
             item = right_rows[i]
             if item["is_category"]:
@@ -70,5 +82,4 @@ def insert_technologies_table(placeholder_paragraph, tech_data):
         for j in range(4):
             row_cells[j].width = widths[j]
 
-    # Remove o marcador original
     placeholder_paragraph.clear()
