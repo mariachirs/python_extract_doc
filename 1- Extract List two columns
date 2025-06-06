@@ -1,6 +1,7 @@
 from docx.shared import Inches, Pt
 from math import ceil
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
 
 def insert_technologies_table(doc, tech_data):
     # Encontrar o parágrafo com o marcador
@@ -13,24 +14,29 @@ def insert_technologies_table(doc, tech_data):
     if not placeholder_paragraph:
         raise ValueError("Marcador {table_technologies} não encontrado no documento.")
 
-    # Processar blocos (categorias e tecnologias)
+    # Construir a lista de linhas com espaços após cada categoria
     rows = []
     for bloc in tech_data:
         rows.append({"is_category": True, "categorie": bloc.categorie})
         for info in bloc.infos:
             rows.append({"is_category": False, "nom": info.nom, "mois": info.mois})
+        # Linha em branco ao final da categoria
+        rows.append({"is_category": False, "nom": "", "mois": ""})
 
+    # Dividir entre lado esquerdo e direito
     mid = ceil(len(rows) / 2)
     left_rows = rows[:mid]
     right_rows = rows[mid:]
 
-    # Criar tabela com 5 colunas (2 blocos + separador)
+    # Criar tabela com 5 colunas
     table = doc.add_table(rows=0, cols=5)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
     widths = [Inches(2), Inches(0.7), Inches(0.2), Inches(2), Inches(0.7)]
 
     # Cabeçalho
     hdr_cells = table.add_row().cells
+    table.rows[0].repeat_header = True
     headers = ['Technologie', 'Mois', '', 'Technologie', 'Mois']
     for i, cell in enumerate(hdr_cells):
         cell.text = headers[i]
@@ -41,7 +47,7 @@ def insert_technologies_table(doc, tech_data):
             run.font.bold = True
         cell.width = widths[i]
 
-    # Estilo da célula
+    # Estilo de célula
     def set_cell_style(cell, bold=False, font_size=10, align=WD_ALIGN_PARAGRAPH.LEFT):
         paragraph = cell.paragraphs[0]
         paragraph.alignment = align
@@ -50,7 +56,7 @@ def insert_technologies_table(doc, tech_data):
         run.font.size = Pt(font_size)
         run.font.bold = bold
 
-    # Preencher linhas
+    # Preencher linhas da tabela
     for i in range(max(len(left_rows), len(right_rows))):
         row_cells = table.add_row().cells
 
@@ -63,7 +69,7 @@ def insert_technologies_table(doc, tech_data):
                 set_cell_style(row_cells[0], bold=True)
             else:
                 row_cells[0].text = item["nom"]
-                row_cells[1].text = str(item["mois"])
+                row_cells[1].text = str(item["mois"]) if item["mois"] else ""
                 set_cell_style(row_cells[0])
                 set_cell_style(row_cells[1])
         else:
@@ -82,17 +88,17 @@ def insert_technologies_table(doc, tech_data):
                 set_cell_style(row_cells[3], bold=True)
             else:
                 row_cells[3].text = item["nom"]
-                row_cells[4].text = str(item["mois"])
+                row_cells[4].text = str(item["mois"]) if item["mois"] else ""
                 set_cell_style(row_cells[3])
                 set_cell_style(row_cells[4])
         else:
             row_cells[3].text = ""
             row_cells[4].text = ""
 
-        # Definir largura
+        # Definir larguras
         for j in range(5):
             row_cells[j].width = widths[j]
 
-    # Inserir a tabela e remover o marcador
+    # Inserir tabela antes do marcador e limpar o parágrafo do marcador
     placeholder_paragraph._element.addprevious(table._element)
     placeholder_paragraph.clear()
