@@ -1,3 +1,7 @@
+from docx.shared import Inches, Pt
+from math import ceil
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
 def insert_technologies_table(doc, tech_data):
     # Localiza o parágrafo com o marcador
     placeholder_paragraph = None
@@ -9,51 +13,53 @@ def insert_technologies_table(doc, tech_data):
     if not placeholder_paragraph:
         raise ValueError("Marcador {table_technologies} não encontrado.")
 
-    # Constrói a lista de linhas com categorias e tecnologias
+    # Organiza linhas
     rows = []
     for bloc in tech_data:
         rows.append({"is_category": True, "categorie": bloc.categorie})
         for info in bloc.infos:
             rows.append({"is_category": False, "nom": info.nom, "mois": info.mois})
 
-    # Divide verticalmente (colunas esquerda e direita)
     mid = ceil(len(rows) / 2)
     left_rows = rows[:mid]
     right_rows = rows[mid:]
 
-    # Cria a tabela antes do marcador
-    table = placeholder_paragraph.insert_paragraph_before().insert_table(rows=0, cols=4)
+    # Cria tabela 5 colunas
+    table = doc.add_table(rows=0, cols=5)
     table.autofit = False
-    widths = [Inches(2), Inches(0.7), Inches(2), Inches(0.7)]
+    widths = [Inches(2), Inches(0.7), Inches(0.2), Inches(2), Inches(0.7)]
 
     # Cabeçalho
     hdr_cells = table.add_row().cells
-    headers = ['Technologie', 'Mois', 'Technologie', 'Mois']
+    headers = ['Technologie', 'Mois', '', 'Technologie', 'Mois']
     for i, cell in enumerate(hdr_cells):
         cell.text = headers[i]
-        run = cell.paragraphs[0].runs[0]
-        run.font.bold = True
-        run.font.size = Pt(10)
+        if headers[i]:
+            run = cell.paragraphs[0].runs[0]
+            run.font.bold = True
+            run.font.size = Pt(10)
         cell.width = widths[i]
 
-    # Função auxiliar de estilo
-    def set_cell_style(cell, bold=False):
+    # Função de estilo
+    def set_cell_style(cell, bold=False, font_size=10, align=None):
         for paragraph in cell.paragraphs:
+            if align:
+                paragraph.alignment = align
             for run in paragraph.runs:
-                run.font.size = Pt(10)
+                run.font.size = Pt(font_size)
                 run.font.bold = bold
 
-    # Preenchimento das linhas
+    # Preenche linhas
     for i in range(max(len(left_rows), len(right_rows))):
         row_cells = table.add_row().cells
 
-        # Lado esquerdo
+        # Esquerda
         if i < len(left_rows):
             item = left_rows[i]
             if item["is_category"]:
                 row_cells[0].text = item["categorie"]
                 row_cells[1].text = ""
-                set_cell_style(row_cells[0], bold=True)
+                set_cell_style(row_cells[0], bold=True, font_size=10, align=WD_ALIGN_PARAGRAPH.LEFT)
             else:
                 row_cells[0].text = item["nom"]
                 row_cells[1].text = str(item["mois"])
@@ -63,24 +69,27 @@ def insert_technologies_table(doc, tech_data):
             row_cells[0].text = ""
             row_cells[1].text = ""
 
-        # Lado direito
+        row_cells[2].text = ""
+
+        # Direita
         if i < len(right_rows):
             item = right_rows[i]
             if item["is_category"]:
-                row_cells[2].text = item["categorie"]
-                row_cells[3].text = ""
-                set_cell_style(row_cells[2], bold=True)
+                row_cells[3].text = item["categorie"]
+                row_cells[4].text = ""
+                set_cell_style(row_cells[3], bold=True, font_size=10, align=WD_ALIGN_PARAGRAPH.LEFT)
             else:
-                row_cells[2].text = item["nom"]
-                row_cells[3].text = str(item["mois"])
-                set_cell_style(row_cells[2])
+                row_cells[3].text = item["nom"]
+                row_cells[4].text = str(item["mois"])
                 set_cell_style(row_cells[3])
+                set_cell_style(row_cells[4])
         else:
-            row_cells[2].text = ""
             row_cells[3].text = ""
+            row_cells[4].text = ""
 
-        for j in range(4):
+        for j in range(5):
             row_cells[j].width = widths[j]
 
-    # Remove o marcador original
+    # Insere a tabela e limpa o marcador
+    placeholder_paragraph._element.addprevious(table._element)
     placeholder_paragraph.clear()
