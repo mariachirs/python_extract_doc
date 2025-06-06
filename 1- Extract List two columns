@@ -3,7 +3,7 @@ from math import ceil
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 def insert_technologies_table(doc, tech_data):
-    # Localiza o parágrafo com o marcador
+    # Encontrar o parágrafo com o marcador
     placeholder_paragraph = None
     for p in doc.paragraphs:
         if "{table_technologies}" in p.text:
@@ -11,9 +11,9 @@ def insert_technologies_table(doc, tech_data):
             break
 
     if not placeholder_paragraph:
-        raise ValueError("Marcador {table_technologies} não encontrado.")
+        raise ValueError("Marcador {table_technologies} não encontrado no documento.")
 
-    # Organiza linhas
+    # Processar blocos (categorias e tecnologias)
     rows = []
     for bloc in tech_data:
         rows.append({"is_category": True, "categorie": bloc.categorie})
@@ -24,7 +24,7 @@ def insert_technologies_table(doc, tech_data):
     left_rows = rows[:mid]
     right_rows = rows[mid:]
 
-    # Cria tabela 5 colunas
+    # Criar tabela com 5 colunas (2 blocos + separador)
     table = doc.add_table(rows=0, cols=5)
     table.autofit = False
     widths = [Inches(2), Inches(0.7), Inches(0.2), Inches(2), Inches(0.7)]
@@ -36,20 +36,21 @@ def insert_technologies_table(doc, tech_data):
         cell.text = headers[i]
         if headers[i]:
             run = cell.paragraphs[0].runs[0]
-            run.font.bold = True
+            run.font.name = "IBM Plex Sans"
             run.font.size = Pt(10)
+            run.font.bold = True
         cell.width = widths[i]
 
-    # Função de estilo
-    def set_cell_style(cell, bold=False, font_size=10, align=None):
-        for paragraph in cell.paragraphs:
-            if align:
-                paragraph.alignment = align
-            for run in paragraph.runs:
-                run.font.size = Pt(font_size)
-                run.font.bold = bold
+    # Estilo da célula
+    def set_cell_style(cell, bold=False, font_size=10, align=WD_ALIGN_PARAGRAPH.LEFT):
+        paragraph = cell.paragraphs[0]
+        paragraph.alignment = align
+        run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
+        run.font.name = "IBM Plex Sans"
+        run.font.size = Pt(font_size)
+        run.font.bold = bold
 
-    # Preenche linhas
+    # Preencher linhas
     for i in range(max(len(left_rows), len(right_rows))):
         row_cells = table.add_row().cells
 
@@ -59,7 +60,7 @@ def insert_technologies_table(doc, tech_data):
             if item["is_category"]:
                 row_cells[0].text = item["categorie"]
                 row_cells[1].text = ""
-                set_cell_style(row_cells[0], bold=True, font_size=10, align=WD_ALIGN_PARAGRAPH.LEFT)
+                set_cell_style(row_cells[0], bold=True)
             else:
                 row_cells[0].text = item["nom"]
                 row_cells[1].text = str(item["mois"])
@@ -69,6 +70,7 @@ def insert_technologies_table(doc, tech_data):
             row_cells[0].text = ""
             row_cells[1].text = ""
 
+        # Separador central
         row_cells[2].text = ""
 
         # Direita
@@ -77,7 +79,7 @@ def insert_technologies_table(doc, tech_data):
             if item["is_category"]:
                 row_cells[3].text = item["categorie"]
                 row_cells[4].text = ""
-                set_cell_style(row_cells[3], bold=True, font_size=10, align=WD_ALIGN_PARAGRAPH.LEFT)
+                set_cell_style(row_cells[3], bold=True)
             else:
                 row_cells[3].text = item["nom"]
                 row_cells[4].text = str(item["mois"])
@@ -87,9 +89,10 @@ def insert_technologies_table(doc, tech_data):
             row_cells[3].text = ""
             row_cells[4].text = ""
 
+        # Definir largura
         for j in range(5):
             row_cells[j].width = widths[j]
 
-    # Insere a tabela e limpa o marcador
+    # Inserir a tabela e remover o marcador
     placeholder_paragraph._element.addprevious(table._element)
     placeholder_paragraph.clear()
