@@ -1,58 +1,74 @@
-from docx import Document
-import re
+def insert_technologies_table(placeholder_paragraph, tech_data):
+    # Constrói lista de linhas com categorias e tecnologias
+    rows = []
+    for bloc in tech_data:
+        rows.append({"is_category": True, "categorie": bloc["categorie"]})
+        for info in bloc["infos"]:
+            rows.append({"is_category": False, "nom": info["nom"], "mois": info["mois"]})
 
-def extract_raw_technology_lines(document):
-    raw_lines = []
-    start_found = False
-    started_matching = False
+    # Divide verticalmente
+    mid = ceil(len(rows) / 2)
+    left_rows = rows[:mid]
+    right_rows = rows[mid:]
 
-    header_pattern = re.compile(r'^Technologies\s+Mois\s+Technologies\s+Mois$', re.IGNORECASE)
-    tech_pattern = re.compile(r'^(.+?)\s+(\d+)$')
+    # Cria tabela antes do parágrafo com marcador
+    table = placeholder_paragraph.insert_paragraph_before().insert_table(rows=0, cols=4)
+    table.autofit = False
+    widths = [Inches(2), Inches(0.7), Inches(2), Inches(0.7)]
 
-    for table in document.tables:
-        for row in table.rows:
-            line = '\t'.join(cell.text.strip() for cell in row.cells if cell.text.strip())
+    # Cabeçalho
+    hdr_cells = table.add_row().cells
+    headers = ['Technologie', 'Mois', 'Technologie', 'Mois']
+    for i, cell in enumerate(hdr_cells):
+        cell.text = headers[i]
+        run = cell.paragraphs[0].runs[0]
+        run.font.bold = True
+        run.font.size = Pt(10)
+        cell.width = widths[i]
 
-            if not start_found:
-                if header_pattern.match(line):
-                    start_found = True
-                continue
+    # Estilo simples sem bordas
+    def set_cell_style(cell, bold=False):
+        for paragraph in cell.paragraphs:
+            for run in paragraph.runs:
+                run.font.size = Pt(10)
+                run.font.bold = bold
 
-            if start_found:
-                if tech_pattern.match(line):
-                    started_matching = True
-                    raw_lines.append(line)
-                elif started_matching:
-                    # We already collected some valid entries and now hit a non-match
-                    return raw_lines
-                else:
-                    # Before valid entries begin, keep collecting category lines
-                    raw_lines.append(line)
+    # Preenchimento da tabela
+    for i in range(max(len(left_rows), len(right_rows))):
+        row_cells = table.add_row().cells
 
-    return raw_lines
-🔧 Step 2: Same as before — Parse flat list of dictionaries
-python
-Copier
-Modifier
-def parse_technology_lines_to_dicts(raw_lines):
-    results = []
-    current_category = None
-    tech_pattern = re.compile(r'^(.+?)\s+(\d+)$')
-
-    for line in raw_lines:
-        if not line.strip():
-            continue
-
-        match = tech_pattern.match(line)
-        if match:
-            technologie = match.group(1).strip()
-            mois = int(match.group(2))
-            results.append({
-                "categorie": current_category or "Sans catégorie",
-                "technologie": technologie,
-                "mois": mois
-            })
+        if i < len(left_rows):
+            item = left_rows[i]
+            if item["is_category"]:
+                row_cells[0].text = item["categorie"]
+                row_cells[1].text = ""
+                set_cell_style(row_cells[0], bold=True)
+            else:
+                row_cells[0].text = item["nom"]
+                row_cells[1].text = str(item["mois"])
+                set_cell_style(row_cells[0])
+                set_cell_style(row_cells[1])
         else:
-            current_category = line.strip(" :\t")
+            row_cells[0].text = ""
+            row_cells[1].text = ""
 
-    return results
+        if i < len(right_rows):
+            item = right_rows[i]
+            if item["is_category"]:
+                row_cells[2].text = item["categorie"]
+                row_cells[3].text = ""
+                set_cell_style(row_cells[2], bold=True)
+            else:
+                row_cells[2].text = item["nom"]
+                row_cells[3].text = str(item["mois"])
+                set_cell_style(row_cells[2])
+                set_cell_style(row_cells[3])
+        else:
+            row_cells[2].text = ""
+            row_cells[3].text = ""
+
+        for j in range(4):
+            row_cells[j].width = widths[j]
+
+    # Remove o marcador original
+    placeholder_paragraph.clear()
