@@ -1,8 +1,5 @@
-from docx.shared import Inches, Pt
-from math import ceil
-
 def insert_technologies_table(doc, tech_data):
-    # Localiza o parágrafo com a tag
+    # Localiza o parágrafo com o marcador
     placeholder_paragraph = None
     for p in doc.paragraphs:
         if "{table_technologies}" in p.text:
@@ -12,13 +9,14 @@ def insert_technologies_table(doc, tech_data):
     if not placeholder_paragraph:
         raise ValueError("Marcador {table_technologies} não encontrado.")
 
-    # Monta linhas com categorias e tecnologias
+    # Constrói a lista de linhas com categorias e tecnologias
     rows = []
     for bloc in tech_data:
         rows.append({"is_category": True, "categorie": bloc.categorie})
         for info in bloc.infos:
             rows.append({"is_category": False, "nom": info.nom, "mois": info.mois})
 
+    # Divide verticalmente (colunas esquerda e direita)
     mid = ceil(len(rows) / 2)
     left_rows = rows[:mid]
     right_rows = rows[mid:]
@@ -38,12 +36,14 @@ def insert_technologies_table(doc, tech_data):
         run.font.size = Pt(10)
         cell.width = widths[i]
 
+    # Função auxiliar de estilo
     def set_cell_style(cell, bold=False):
         for paragraph in cell.paragraphs:
             for run in paragraph.runs:
                 run.font.size = Pt(10)
                 run.font.bold = bold
 
+    # Preenchimento das linhas
     for i in range(max(len(left_rows), len(right_rows))):
         row_cells = table.add_row().cells
 
@@ -82,4 +82,5 @@ def insert_technologies_table(doc, tech_data):
         for j in range(4):
             row_cells[j].width = widths[j]
 
+    # Remove o marcador original
     placeholder_paragraph.clear()
