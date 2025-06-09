@@ -1,0 +1,34 @@
+from docx import Document
+
+
+def extract_paragraphs_between_headers(doc_path, start_header):
+    doc = Document(doc_path)
+    collecting = False
+    collected_paragraphs = []
+    header_style = None
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        style = para.style.name
+
+        if text == start_header:
+            collecting = True
+            header_style = style
+            continue
+
+        if collecting:
+            if style == header_style and text:
+                break
+            if text:
+                collected_paragraphs.append(text)
+
+    return collected_paragraphs
+
+
+if __name__ == "__main__":
+    file_path = "CV-Gabarit-LGS-2023.docx"
+    paragraphs = extract_paragraphs_between_headers(file_path, "Associations")
+
+    print("\n--- Extracted Paragraphs ---\n")
+    for p in paragraphs:
+        print(p)
