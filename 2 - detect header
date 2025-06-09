@@ -1,55 +1,44 @@
-=======================================
-Start collecting text after the exact match "Associations".
-
-Stop at any new line that looks like a section header, even if it’s not styled as a heading:
-
-Has no punctuation
-
-Is short (2–6 words)
-
-Has capitalized words
-========================
-
-
 import re
 from docx import Document
 
-
 def is_likely_section_header(text: str) -> bool:
+    """
+    Heuristic to detect section headers: short, capitalized, no punctuation.
+    """
     return (
-        bool(re.match(r"^[A-Z][A-Za-zÀ-ÿ\\s,'’\-]{2,40}$", text.strip()))
-        and len(text.strip().split()) <= 6
+        bool(re.match(r"^[A-ZÀ-Ÿ][\wÀ-ÿ\s,'’\-]{2,40}$", text.strip()))
+        and 1 <= len(text.strip().split()) <= 6
     )
 
-
 def extract_paragraphs_between_headers(doc_path, start_header):
+    """
+    Extracts paragraphs between a given header and the next likely section header.
+    
+    Parameters:
+        doc_path (str): Path to the .docx file
+        start_header (str): Header text to start extraction from
+
+    Returns:
+        list[str]: Extracted paragraph texts
+    """
     doc = Document(doc_path)
     collecting = False
-    collected_paragraphs = []
-    header_style = None
+    collected = []
 
     for para in doc.paragraphs:
         text = para.text.strip()
-        style = para.style.name
 
-        if text == start_header:
+        if not text:
+            continue
+
+        # Start collecting when header matches (case-insensitive)
+        if text.lower() == start_header.lower():
             collecting = True
-            header_style = style
             continue
 
         if collecting:
-            if (style == header_style and text) or is_likely_section_header(text):
+            if text.lower() != start_header.lower() and is_likely_section_header(text):
                 break
-            if text:
-                collected_paragraphs.append(text)
+            collected.append(text)
 
-    return collected_paragraphs
-
-
-if __name__ == "__main__":
-    file_path = "MARTINS_Roni_CV_23-03 (4) (1).docx"
-    paragraphs = extract_paragraphs_between_headers(file_path, "Associations")
-
-    print("\n--- Extracted Paragraphs ---\n")
-    for p in paragraphs:
-        print(p)
+    return collected
