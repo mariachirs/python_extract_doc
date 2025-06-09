@@ -1,0 +1,61 @@
+✅ Better Approach
+We’ll now change the logic:
+
+Start collecting text after the exact match "Associations".
+
+Stop at any new line that looks like a section header, even if it’s not styled as a heading:
+
+Has no punctuation
+
+Is short (2–6 words)
+
+Has capitalized words
+
+🔁 Updated Logic
+python
+Copier
+Modifier
+import re
+from docx import Document
+
+
+def is_likely_section_header(text: str) -> bool:
+    return (
+        bool(re.match(r"^[A-Z][A-Za-zÀ-ÿ\\s,'’\\-]{2,40}$", text.strip()))
+        and len(text.strip().split()) <= 6
+    )
+
+
+def extract_paragraphs_after_header(doc_path, start_header):
+    doc = Document(doc_path)
+    collecting = False
+    collected = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if text == start_header:
+            collecting = True
+            continue
+
+        if collecting:
+            if is_likely_section_header(text):
+                break
+            if text:
+                collected.append(text)
+
+    return collected
+
+
+if __name__ == "__main__":
+    file_path = "MARTINS_Roni_CV_23-03 (4) (1).docx"
+    result = extract_paragraphs_after_header(file_path, "Associations")
+    for p in result:
+        print(p)
+✅ This version will:
+Work with non-heading styles
+
+Detect next section even if it’s a regular paragraph
+
+a. Would you like this version written into the canvas?
+b. Should I extend this to extract all sections and return a full dictionary?
