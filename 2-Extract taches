@@ -1,0 +1,83 @@
+✅ Method 1: Extract Task Sections from All Mandates
+python
+Copier
+Modifier
+from docx.document import Document as DocxDocument
+from typing import List
+
+def extract_taches_until_technologies_table(doc: DocxDocument) -> List[str]:
+    """
+    Extract all task-related lines for all mandates, stopping before any 'Technologies utilisées' table.
+    """
+    taches = []
+    in_taches_section = False
+
+    # Detect when any table contains "Technologies utilisées"
+    tech_tables_starts = set()
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if cell.text.strip().lower().startswith("technologies utilisées"):
+                    tech_tables_starts.add(cell.text.strip())
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        if "a effectué les tâches suivantes" in text.lower():
+            in_taches_section = True
+            continue
+
+        if in_taches_section:
+            # Stop if technology section appears in plain paragraph text (just in case)
+            if any(text.lower().startswith(t.lower()) for t in tech_tables_starts):
+                in_taches_section = False
+                continue
+
+            # Stop if it's the start of a new mandate (defensive)
+            if "Mandat no" in text:
+                in_taches_section = False
+                continue
+
+            if text:
+                taches.append(text)
+
+    return taches
+✅ Method 2: Structure Task Lines into Category-Task Pairs
+python
+Copier
+Modifier
+from typing import List, Dict
+
+def organize_taches_by_categorie(taches_lines: List[str]) -> List[Dict[str, str]]:
+    """
+    Convert extracted task lines into a list of dictionaries with 'Categorie' and 'Task'.
+    """
+    structured = []
+    current_category = None
+
+    for line in taches_lines:
+        # Detect category: no punctuation and no leading space
+        if line and line[-1] not in ".;:" and line == line.strip():
+            current_category = line
+        elif current_category and line:
+            structured.append({
+                "Categorie": current_category,
+                "Task": line
+            })
+
+    return structured
+✅ Example Usage
+python
+Copier
+Modifier
+from docx import Document
+
+doc = Document("Bernier_Sylvain_CV_25-06-10 - V2.docx")
+
+# Extract and organize tasks
+taches_lines = extract_taches_until_technologies_table(doc)
+structured_tasks = organize_taches_by_categorie(taches_lines)
+
+# Optional: display
+for task in structured_tasks:
+    print(f"Categorie: {task['Categorie']} | Task: {task['Task']}")
