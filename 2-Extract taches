@@ -1,48 +1,78 @@
-✅ Method 1: Extract Task Sections from All Mandates
+✅ Method 1: extract_taches_until_technologies_table
 python
 Copier
 Modifier
 from docx.document import Document as DocxDocument
-from typing import List
+from typing import List, Optional
 
-def extract_taches_until_technologies_table(doc: DocxDocument) -> List[str]:
+def extract_taches_until_technologies_table(
+    doc: DocxDocument,
+    projet_contains: Optional[str] = None,
+    fonction_contains: Optional[str] = None
+) -> List[str]:
     """
-    Extract all task-related lines for all mandates, stopping before any 'Technologies utilisées' table.
+    Extracts all task lines from each mandate, stopping at 'Technologies utilisées' tables,
+    and supports filtering by project or function keywords.
     """
     taches = []
+    in_mandate = False
     in_taches_section = False
+    current_mandate_buffer = []
+    mandate_valid = True
 
-    # Detect when any table contains "Technologies utilisées"
-    tech_tables_starts = set()
+    # Step 1: Identify all "Technologies utilisées" headings from tables
+    tech_table_triggers = set()
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                if cell.text.strip().lower().startswith("technologies utilisées"):
-                    tech_tables_starts.add(cell.text.strip())
+                cell_text = cell.text.strip().lower()
+                if cell_text.startswith("technologies utilisées"):
+                    tech_table_triggers.add(cell_text)
 
     for para in doc.paragraphs:
         text = para.text.strip()
 
+        # Detect start of a new mandate
+        if "Mandat no" in text:
+            in_mandate = True
+            in_taches_section = False
+            current_mandate_buffer = []
+            mandate_valid = True
+            continue
+
+        # Collect text to evaluate filters
+        if in_mandate:
+            current_mandate_buffer.append(text)
+            if projet_contains and "projet" in text.lower():
+                if projet_contains.lower() not in text.lower():
+                    mandate_valid = False
+            if fonction_contains and "fonction" in text.lower():
+                if fonction_contains.lower() not in text.lower():
+                    mandate_valid = False
+
+        # Trigger for task section
         if "a effectué les tâches suivantes" in text.lower():
+            if not mandate_valid:
+                in_mandate = False
+                continue
             in_taches_section = True
             continue
 
+        # Collect task lines until tech table
         if in_taches_section:
-            # Stop if technology section appears in plain paragraph text (just in case)
-            if any(text.lower().startswith(t.lower()) for t in tech_tables_starts):
+            if any(text.lower().startswith(trigger) for trigger in tech_table_triggers):
                 in_taches_section = False
+                in_mandate = False
                 continue
-
-            # Stop if it's the start of a new mandate (defensive)
             if "Mandat no" in text:
                 in_taches_section = False
+                in_mandate = False
                 continue
-
             if text:
                 taches.append(text)
 
     return taches
-✅ Method 2: Structure Task Lines into Category-Task Pairs
+✅ Method 2: organize_taches_by_categorie
 python
 Copier
 Modifier
@@ -56,7 +86,7 @@ def organize_taches_by_categorie(taches_lines: List[str]) -> List[Dict[str, str]
     current_category = None
 
     for line in taches_lines:
-        # Detect category: no punctuation and no leading space
+        # Consider a category if it lacks punctuation and is not indented
         if line and line[-1] not in ".;:" and line == line.strip():
             current_category = line
         elif current_category and line:
@@ -67,17 +97,3 @@ def organize_taches_by_categorie(taches_lines: List[str]) -> List[Dict[str, str]
 
     return structured
 ✅ Example Usage
-python
-Copier
-Modifier
-from docx import Document
-
-doc = Document("Bernier_Sylvain_CV_25-06-10 - V2.docx")
-
-# Extract and organize tasks
-taches_lines = extract_taches_until_technologies_table(doc)
-structured_tasks = organize_taches_by_categorie(taches_lines)
-
-# Optional: display
-for task in structured_tasks:
-    print(f"Categorie: {task['Categorie']} | Task: {task['Task']}")
