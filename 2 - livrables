@@ -1,0 +1,96 @@
+✅ Method 1 – Extract Livrables
+python
+Copier
+Modifier
+from typing import List, Optional
+from docx.document import Document as DocxDocument
+
+def extract_livrables_until_technologies_table(
+    doc: DocxDocument,
+    projet_contains: Optional[str] = None,
+    fonction_contains: Optional[str] = None
+) -> List[str]:
+    """
+    Extracts all livrables lines from each mandate, starting from 'Les livrables suivants ont été réalisés...',
+    and stopping before the 'Technologies utilisées' table. Supports optional filters.
+    """
+    livrables = []
+    in_mandate = False
+    in_livrables_section = False
+    current_mandate_buffer = []
+    mandate_valid = True
+
+    # Find "Technologies utilisées" table triggers
+    tech_table_triggers = set()
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                text = cell.text.strip().lower()
+                if text.startswith("technologies utilisées"):
+                    tech_table_triggers.add(text)
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        # Start of a new mandate
+        if "Mandat no" in text:
+            in_mandate = True
+            in_livrables_section = False
+            current_mandate_buffer = []
+            mandate_valid = True
+            continue
+
+        if in_mandate:
+            current_mandate_buffer.append(text)
+            if projet_contains and "projet" in text.lower():
+                if projet_contains.lower() not in text.lower():
+                    mandate_valid = False
+            if fonction_contains and "fonction" in text.lower():
+                if fonction_contains.lower() not in text.lower():
+                    mandate_valid = False
+
+        # Trigger the livrables section
+        if "Les livrables suivants ont été réalisés" in text:
+            if not mandate_valid:
+                in_mandate = False
+                continue
+            in_livrables_section = True
+            continue
+
+        if in_livrables_section:
+            if any(text.lower().startswith(trigger) for trigger in tech_table_triggers):
+                in_livrables_section = False
+                in_mandate = False
+                continue
+            if "Mandat no" in text:
+                in_livrables_section = False
+                in_mandate = False
+                continue
+            if text:
+                livrables.append(text)
+
+    return livrables
+✅ Method 2 – Organize Livrables by Categorie
+python
+Copier
+Modifier
+from typing import List, Dict
+
+def organize_livrables_by_categorie(livrables_lines: List[str]) -> List[Dict[str, str]]:
+    """
+    Organizes extracted livrables into a list of dictionaries with 'Categorie' and 'Livrable'.
+    """
+    structured = []
+    current_category = None
+
+    for line in livrables_lines:
+        # Category = line without punctuation
+        if line and line[-1] not in ".;:" and line == line.strip():
+            current_category = line
+        elif current_category and line:
+            structured.append({
+                "Categorie": current_category,
+                "Livrable": line
+            })
+
+    return structured
