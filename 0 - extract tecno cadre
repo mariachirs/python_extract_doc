@@ -1,0 +1,47 @@
+from docx.document import Document as DocxDocument
+from typing import Dict, List
+
+def extract_technologies_by_mandate(doc: DocxDocument) -> Dict[str, List[str]]:
+    """
+    Extracts all technologies from the doc by pairing each 'Projet' and 'Fonction' found
+    in paragraphs with the next table containing 'Technologies utilisées dans le cadre du mandat'.
+    """
+    paragraphs = doc.paragraphs
+    tables = doc.tables
+
+    mandates = {}
+    project_fonction_pairs = []
+    current_project, current_fonction = None, None
+
+    # Step 1: Collect project-fonction pairs in order
+    for para in paragraphs:
+        text = para.text.strip()
+        if text.startswith("Projet"):
+            current_project = text.split(":", 1)[-1].strip()
+        elif text.startswith("Fonction"):
+            current_fonction = text.split(":", 1)[-1].strip()
+        if current_project and current_fonction:
+            project_fonction_pairs.append((current_project, current_fonction))
+            current_project, current_fonction = None, None
+
+    # Step 2: Scan tables and match them sequentially
+    pair_index = 0
+    for table in tables:
+        for row in table.rows:
+            if len(row.cells) >= 2:
+                left = row.cells[0].text.strip().lower()
+                right = row.cells[1].text.strip()
+                if "technologies utilisées dans le cadre du mandat" in left:
+                    if pair_index < len(project_fonction_pairs):
+                        key = f"{project_fonction_pairs[pair_index][0]} - {project_fonction_pairs[pair_index][1]}"
+                        mandates[key] = [tech.strip() for tech in right.split(",") if tech.strip()]
+                        pair_index += 1
+                        break
+
+    return mandates
+
+# Example usage:
+# from docx import Document
+# doc = Document("Bernier_Sylvain_CV_25-06-10 - V2.docx")
+# result = extract_technologies_by_mandate(doc)
+# print(result)
