@@ -1,47 +1,72 @@
 from docx.document import Document as DocxDocument
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-def extract_technologies_by_mandate(doc: DocxDocument) -> Dict[str, List[str]]:
+def extract_technologies_with_backlink(
+    doc: DocxDocument,
+    projet_filter: Optional[str] = None,
+    fonction_filter: Optional[str] = None
+) -> Dict[str, List[str]]:
     """
-    Extracts all technologies from the doc by pairing each 'Projet' and 'Fonction' found
-    in paragraphs with the next table containing 'Technologies utilisées dans le cadre du mandat'.
+    Extracts technologies from each table that contains them and links with the most recent
+    'Projet' and 'Fonction' found in preceding tables. Applies filters if provided.
     """
-    paragraphs = doc.paragraphs
     tables = doc.tables
+    technologies_by_mandate = {}
+    previous_table_data = {}
 
-    mandates = {}
-    project_fonction_pairs = []
-    current_project, current_fonction = None, None
+    for idx, table in enumerate(tables):
+        current_project = None
+        current_fonction = None
+        technologies = []
 
-    # Step 1: Collect project-fonction pairs in order
-    for para in paragraphs:
-        text = para.text.strip()
-        if text.startswith("Projet"):
-            current_project = text.split(":", 1)[-1].strip()
-        elif text.startswith("Fonction"):
-            current_fonction = text.split(":", 1)[-1].strip()
-        if current_project and current_fonction:
-            project_fonction_pairs.append((current_project, current_fonction))
-            current_project, current_fonction = None, None
-
-    # Step 2: Scan tables and match them sequentially
-    pair_index = 0
-    for table in tables:
         for row in table.rows:
             if len(row.cells) >= 2:
                 left = row.cells[0].text.strip().lower()
                 right = row.cells[1].text.strip()
-                if "technologies utilisées dans le cadre du mandat" in left:
-                    if pair_index < len(project_fonction_pairs):
-                        key = f"{project_fonction_pairs[pair_index][0]} - {project_fonction_pairs[pair_index][1]}"
-                        mandates[key] = [tech.strip() for tech in right.split(",") if tech.strip()]
-                        pair_index += 1
-                        break
 
-    return mandates
+                if "projet" in left:
+                    current_project = right
+                if "fonction" in left:
+                    current_fonction = right
+                if "technologies utilisées dans le cadre du mandat" in left:
+                    technologies = [tech.strip() for tech in right.split(",") if tech.strip()]
+
+        if current_project or current_fonction:
+            previous_table_data = {
+                "Projet": current_project or previous_table_data.get("Projet"),
+                "Fonction": current_fonction or previous_table_data.get("Fonction"),
+            }
+
+        if technologies:
+            project = previous_table_data.get("Projet")
+            fonction = previous_table_data.get("Fonction")
+            if project and fonction:
+                if projet_filter and projet_filter.lower() not in project.lower():
+                    continue
+                if fonction_filter and fonction_filter.lower() not in fonction.lower():
+                    continue
+                key = f"{project} - {fonction}"
+                technologies_by_mandate[key] = technologies
+
+    return technologies_by_mandate
 
 # Example usage:
 # from docx import Document
 # doc = Document("Bernier_Sylvain_CV_25-06-10 - V2.docx")
-# result = extract_technologies_by_mandate(doc)
-# print(result)
+# results_1 = extract_technologies_with_backlink(
+#     doc,
+#     projet_filter="Décentralisation des services à la clientèle",
+#     fonction_filter="Chef d'équipe et analyste fonctionnel"
+# )
+# results_2 = extract_technologies_with_backlink(
+#     doc,
+#     projet_filter="Relation entre les caisses et le Registre des droits personnels",
+#     fonction_filter="Chef d'équipe et analyste fonctionnel"
+# )
+# results_3 = extract_technologies_with_backlink(
+#     doc,
+#     projet_filter="Révision des processus et du système informatique des pensions alimentaires",
+#     fonction_filter="Architecte fonctionnel"
+# )
+# combined = {**results_1, **results_2, **results_3}
+# print(combined)
