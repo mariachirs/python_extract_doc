@@ -1,0 +1,11 @@
+from docx.text.run import WD_BREAK
+
+def adicionar_paragrafo_com_quebras_e_tabs(document, texto, substituir_tab_por_espacos=True, espacos_por_tab=4):
+    par = document.add_paragraph()
+    for i, linha in enumerate(texto.split('\n')):
+        if i > 0:
+            par.add_run().add_break(WD_BREAK.LINE)
+        
+        if substituir_tab_por_espacos:
+            linha = linha.replace('\t', ' ' * espacos_por_tab)
+        par.add_run(linha)
