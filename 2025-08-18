@@ -1,0 +1,57 @@
+from typing import Dict, List, Union
+from docx import Document
+from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
+from docx.table import Table, _Cell
+
+def iter_block_items(parent: Union[Document, _Cell]):
+    if hasattr(parent, 'element'):
+        parent_elm = parent.element.body
+    else:
+        parent_elm = parent._tc
+    for child in parent_elm.iterchildren():
+        if child.tag == qn('w:p'):
+            yield Paragraph(child, parent)
+        elif child.tag == qn('w:tbl'):
+            yield Table(child, parent)
+
+def extract_livrables(
+    doc: Document, fonction: str, projet: str
+) -> Dict[str, List[str]]:
+    # 1. Repérer la table cible contenant fonction + projet
+    blocks = list(iter_block_items(doc))
+    start_idx = None
+    for idx, block in enumerate(blocks):
+        if isinstance(block, Table):
+            texts = [cell.text.strip() for row in block.rows for cell in row.cells]
+            if any(t.startswith('Fonction :') and fonction in t for t in texts)\
+               and any(t.startswith('Projet :') and projet in t for t in texts):
+                start_idx = idx + 1
+                break
+    if start_idx is None:
+        raise ValueError(f"Section '{fonction}'/'{projet}' non trouvée dans les tables.")
+
+    # 2. Parcourir les paragraphes listés jusqu'au marqueur stop
+    stop = 'TECHNOLOGIES UTILISÉES DANS LE CADRE DU MANDAT'
+    result: Dict[str, List[str]] = {}
+    current_cat = None
+    for block in blocks[start_idx:]:
+        if isinstance(block, Paragraph):
+            txt = block.text.strip().rstrip('.')
+            if not txt:
+                continue
+            if txt.startswith('Projet :') or txt.startswith('Fonction :') or stop in txt:
+                break
+            ppr = block._p.get_or_add_pPr()
+            num = ppr.find(qn('w:numPr'))
+            if num is not None:
+                lvl = num.find(qn('w:ilvl'))
+                level = int(lvl.val) if lvl is not None else 0
+                if level == 0:
+                    current_cat = txt
+                    result[current_cat] = []
+                elif level == 1 and current_cat:
+                    result[current_cat].append(txt)
+    if not result:
+        raise ValueError("Aucun livrable extrait pour cette section.")
+    return result
