@@ -1,0 +1,59 @@
+from docx import Document
+from docx.oxml.ns import qn
+
+def is_list_paragraph(paragraph) -> bool:
+    p_pr = paragraph._p.get_or_add_pPr()
+    return p_pr.find(qn('w:numPr')) is not None
+
+ def get_list_level(paragraph) -> int:
+    p_pr = paragraph._p.get_or_add_pPr()
+    num_pr = p_pr.find(qn('w:numPr'))
+    if num_pr is None:
+        return -1
+    ilvl = num_pr.find(qn('w:ilvl'))
+    return int(ilvl.val) if ilvl is not None else 0
+
+ def extract_livrables(doc, fonction, projet):
+    paras = list(doc.paragraphs)
+    start_idx = None
+    for i, p in enumerate(paras):
+        txt = p.text.strip()
+        if txt.startswith('Projet :') and projet in txt:
+            for j in range(i+1, len(paras)):
+                t2 = paras[j].text.strip()
+                if t2.startswith('Fonction :') and fonction in t2:
+                    start_idx = j + 1
+                    break
+            break
+    if start_idx is None:
+        raise ValueError('Section non trouvée')
+    stop_phrase = 'TECHNOLOGIES UTILISÉES DANS LE CADRE DU MANDAT'
+    result = {}
+    current_cat = None
+    for p in paras[start_idx:]:
+        text = p.text.strip().rstrip('.')
+        if not text: continue
+        if text.startswith('Projet :') or text.startswith('Fonction :') or stop_phrase in text:
+            break
+        if is_list_paragraph(p):
+            level = get_list_level(p)
+            if level == 0:
+                current_cat = text
+                result[current_cat] = []
+            elif level == 1 and current_cat:
+                result[current_cat].append(text)
+    return result
+
+# Charger document
+path = '/mnt/data/Bernier_Sylvain_CV_25-06-10 - V2.docx'
+doc = Document(path)
+
+tests = [
+    ('Architecte fonctionnel', 'Révision des processus et du système informatique des pensions alimentaires (RPSIPA)'),
+    ("Chef d'équipe et analyste fonctionnel", 'Relation entre les caisses et le Registre des droits personnels et réels mobiliers'),
+    ("Chef d'équipe et analyste fonctionnel", 'Décentralisation des services à la clientèle')
+]
+
+for fonction, projet in tests:
+    res = extract_livrables(doc, fonction, projet)
+    print(f"Mandat: {projet}\n", res, "\n")
