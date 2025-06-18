@@ -1,72 +1,108 @@
+# Complete extraction function with robust cell handling and correct row indices
+
 from docx import Document
 from docx.oxml.table import CT_Tbl
 from docx.oxml.text.paragraph import CT_P
 from docx.text.paragraph import Paragraph
+import re
+
+def full_cell_text(cell):
+    """
+    Concatenate all text across all paragraphs and runs in a cell.
+    """
+    texts = []
+    for paragraph in cell.paragraphs:
+        texts.append(''.join(run.text for run in paragraph.runs))
+    return ' '.join(texts).strip()
+
+def normalize(s: str) -> str:
+    """
+    Lowercase, replace NBSP with space, collapse whitespace.
+    """
+    return re.sub(r'\s+', ' ', s.replace('\xa0', ' ')).strip().lower()
 
 def extract_tasks_by_proj_fonc(doc: Document, projet_filter: str, fonction_filter: str):
     """
     Extracts tasks grouped by category for a given projet and fonction.
-    Returns a dict with keys 'projet', 'fonction', and 'tasks_by_category'.
+    - Reads Projet from row 2, Fonction from row 4 in each 'Mandat no' table.
+    - Finds the paragraph "a effectué les tâches suivantes" and collects subsequent bullets.
     """
-    pf = projet_filter.strip().lower()
-    ff = fonction_filter.strip().lower()
-    # Step 1: Find the detailed 'Mandat no' table matching filters
-    detail_tables = []
-    for idx, tbl in enumerate(doc.tables):
-        if tbl.rows and tbl.rows[0].cells[0].text.strip().startswith("Mandat no"):
-            kv = {
-                row.cells[0].text.replace('\xa0',' ').strip().lower().rstrip(':'):
-                row.cells[1].text.strip()
-                for row in tbl.rows
-            }
-            projet = kv.get("projet", "")
-            fonction = kv.get("fonction", "")
-            if pf in projet.lower() and ff in fonction.lower():
-                detail_tables.append((idx, projet, fonction))
-    if not detail_tables:
-        raise ValueError(f"No mandate matching Projet='{projet_filter}' and Fonction='{fonction_filter}'")
-    tbl_idx, projet, fonction = detail_tables[0]
+    pf = normalize(projet_filter)
+    ff = normalize(fonction_filter)
 
-    # Step 2: Locate the table's position in the document XML
+    # 1. Find all "Mandat no" tables
+    detail_idxs = [
+        idx for idx, tbl in enumerate(doc.tables)
+        if normalize(full_cell_text(tbl.rows[0].cells[0])).startswith("mandat no")
+    ]
+    if not detail_idxs:
+        raise ValueError("No 'Mandat no' tables found.")
+
+    # 2. Select the table matching filters
+    chosen = None
+    for idx in detail_idxs:
+        tbl = doc.tables[idx]
+        projet_raw = full_cell_text(tbl.rows[1].cells[1])
+        fonction_raw = full_cell_text(tbl.rows[3].cells[1])
+        if pf in normalize(projet_raw) and ff in normalize(fonction_raw):
+            chosen = (idx, projet_raw.strip(), fonction_raw.strip())
+            break
+    if not chosen:
+        raise ValueError(f"No mandate matching Projet='{projet_filter}' and Fonction='{fonction_filter}'")
+
+    tbl_idx, projet, fonction = chosen
+
+    # 3. Locate XML position of this table
     body_children = list(doc.element.body.iterchildren())
     xml_idx = next(
         i for i, ch in enumerate(body_children)
         if isinstance(ch, CT_Tbl) and doc.tables[tbl_idx]._tbl is ch
     )
 
-    # Step 3: Find the paragraph with the tasks introduction
+    # 4. Find tasks introduction paragraph
     start = None
     for i in range(xml_idx + 1, len(body_children)):
         ch = body_children[i]
-        if isinstance(ch, CT_P) and "a effectué les tâches suivantes" in Paragraph(ch, doc).text.strip().lower():
-            start = i + 1
-            break
+        if isinstance(ch, CT_P):
+            txt = normalize(Paragraph(ch, doc).text)
+            if "a effectué les tâches suivantes" in txt:
+                start = i + 1
+                break
     if start is None:
         raise ValueError("Could not find the 'a effectué les tâches suivantes' paragraph")
 
-    # Step 4: Collect all paragraphs until the next table
+    # 5. Collect lines until next table
     tasks = []
     for j in range(start, len(body_children)):
         ch = body_children[j]
         if isinstance(ch, CT_Tbl):
             break
         if isinstance(ch, CT_P):
-            txt = Paragraph(ch, doc).text.strip()
-            if txt:
-                tasks.append(txt)
+            line = Paragraph(ch, doc).text.strip()
+            if line:
+                tasks.append(line)
 
-    # Step 5: Group lines by top-level category
+    # 6. Group by category
     grouped = {}
     current_cat = None
     for line in tasks:
-        if not (line.endswith(';') or line.endswith('.') or line.endswith(':')):
+        if not re.search(r'[;.:]\s*$', line):
             current_cat = line
             grouped[current_cat] = []
         elif current_cat:
-            grouped[current_cat].append(line.rstrip(';').rstrip('.'))
+            grouped[current_cat].append(re.sub(r'[;.]$', '', line).strip())
 
     return {
         "projet": projet,
         "fonction": fonction,
         "tasks_by_category": grouped
     }
+
+# Example usage:
+# doc = Document("Bernier_Sylvain_CV_25-06-17 - V2 - Many Conferences.docx")
+# result = extract_tasks_by_proj_fonc(
+#     doc,
+#     projet_filter="Révision des processus et du système informatique des pensions alimentaires",
+#     fonction_filter="Architecte fonctionnel"
+# )
+# print(result)
