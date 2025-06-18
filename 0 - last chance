@@ -1,0 +1,72 @@
+from docx import Document
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.text.paragraph import Paragraph
+
+def extract_tasks_by_proj_fonc(doc: Document, projet_filter: str, fonction_filter: str):
+    """
+    Extracts tasks grouped by category for a given projet and fonction.
+    Returns a dict with keys 'projet', 'fonction', and 'tasks_by_category'.
+    """
+    pf = projet_filter.strip().lower()
+    ff = fonction_filter.strip().lower()
+    # Step 1: Find the detailed 'Mandat no' table matching filters
+    detail_tables = []
+    for idx, tbl in enumerate(doc.tables):
+        if tbl.rows and tbl.rows[0].cells[0].text.strip().startswith("Mandat no"):
+            kv = {
+                row.cells[0].text.replace('\xa0',' ').strip().lower().rstrip(':'):
+                row.cells[1].text.strip()
+                for row in tbl.rows
+            }
+            projet = kv.get("projet", "")
+            fonction = kv.get("fonction", "")
+            if pf in projet.lower() and ff in fonction.lower():
+                detail_tables.append((idx, projet, fonction))
+    if not detail_tables:
+        raise ValueError(f"No mandate matching Projet='{projet_filter}' and Fonction='{fonction_filter}'")
+    tbl_idx, projet, fonction = detail_tables[0]
+
+    # Step 2: Locate the table's position in the document XML
+    body_children = list(doc.element.body.iterchildren())
+    xml_idx = next(
+        i for i, ch in enumerate(body_children)
+        if isinstance(ch, CT_Tbl) and doc.tables[tbl_idx]._tbl is ch
+    )
+
+    # Step 3: Find the paragraph with the tasks introduction
+    start = None
+    for i in range(xml_idx + 1, len(body_children)):
+        ch = body_children[i]
+        if isinstance(ch, CT_P) and "a effectué les tâches suivantes" in Paragraph(ch, doc).text.strip().lower():
+            start = i + 1
+            break
+    if start is None:
+        raise ValueError("Could not find the 'a effectué les tâches suivantes' paragraph")
+
+    # Step 4: Collect all paragraphs until the next table
+    tasks = []
+    for j in range(start, len(body_children)):
+        ch = body_children[j]
+        if isinstance(ch, CT_Tbl):
+            break
+        if isinstance(ch, CT_P):
+            txt = Paragraph(ch, doc).text.strip()
+            if txt:
+                tasks.append(txt)
+
+    # Step 5: Group lines by top-level category
+    grouped = {}
+    current_cat = None
+    for line in tasks:
+        if not (line.endswith(';') or line.endswith('.') or line.endswith(':')):
+            current_cat = line
+            grouped[current_cat] = []
+        elif current_cat:
+            grouped[current_cat].append(line.rstrip(';').rstrip('.'))
+
+    return {
+        "projet": projet,
+        "fonction": fonction,
+        "tasks_by_category": grouped
+    }
