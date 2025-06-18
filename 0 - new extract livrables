@@ -1,182 +1,65 @@
-"""extract_livrables.py
----------------------------------
-CLI tool to pull *Categorie → Livrables* pairs from a `.docx` CV.
+RONI
 
-Usage examples
---------------
-# All mandates in the default CV
-python extract_livrables.py
 
-# Only the project that contains the given words (case-insensitive)
-python extract_livrables.py --projet "Décentralisation des services"
-
-# Only mandates whose Fonction contains the given words
-python extract_livrables.py --fonction "Architecte fonctionnel"
-
-# Different CV file and both filters combined
-python extract_livrables.py --doc /path/Other_CV.docx --projet RPSIPA --fonction Architecte
-
-The script prints **only** the Category headings and their Deliverables.
-"""
-
-from __future__ import annotations
-
-import argparse
-from pathlib import Path
-from typing import List, Dict, Any
-
+from typing import Dict, List
 from docx import Document
-from docx.table import Table
-from docx.text.paragraph import Paragraph
 
-# --------------------------------------------------------------------------------------
-# Helper functions
-# --------------------------------------------------------------------------------------
-
-def iter_blocks(doc: Document):
-    """Yield paragraphs *and* tables in document order."""
-    for child in doc.element.body.iterchildren():
-        if child.tag.endswith("p"):
-            yield Paragraph(child, doc)
-        elif child.tag.endswith("tbl"):
-            yield Table(child, doc)
-
-
-def list_level(paragraph: Paragraph) -> int | None:
-    """Return the numbering level (ilvl) or **None** if the paragraph is not in a list."""
-    pPr = paragraph._p.pPr
-    if pPr is None:
-        return None
-    numPr = pPr.numPr
-    if numPr is None:
-        return None
-    ilvl = numPr.ilvl
-    return int(ilvl.val) if ilvl is not None else None
-
-# --------------------------------------------------------------------------------------
-# Core extractor
-# --------------------------------------------------------------------------------------
-
-def extract_mandates(
-    doc_path: str | Path,
-    *,
-    fonction: str | None = None,
-    projet: str | None = None,
-) -> List[Dict[str, Any]]:
-    """Return a list of mandates (dicts) from *doc_path*.
-
-    Optional filters *fonction* and *projet* (substring, case‑insensitive) are
-    applied **inside** this function so callers don’t need a second pass.
+def extract_livrables(
+    doc: Document, fonction: str, projet: str
+) -> Dict[str, List[str]]:
     """
-    doc = Document(str(doc_path))
+    Extrait les catégories et livrables pour une section spécifiée par fonction et projet.
+    Utilise les puces :
+      • Catégorie
+       Livrable
+    S'arrête à la détection de la chaîne stop ou d'une nouvelle section.
+    """
+    # Repérer début de section
+    paras = [p for p in doc.paragraphs]
+    start_idx = None
+    for i, p in enumerate(paras):
+        txt = p.text.strip()
+        if txt.startswith("Projet :") and projet in txt:
+            # Cherche fonction suivante
+            for j in range(i+1, len(paras)):
+                t2 = paras[j].text.strip()
+                if t2.startswith("Fonction :") and fonction in t2:
+                    start_idx = j + 1
+                    break
+            break
+    if start_idx is None:
+        raise ValueError(f"Section pour fonction '{fonction}' et projet '{projet}' non trouvée.")
 
-    mandates: list[dict] = []
-    meta = {"Projet": "", "Fonction": ""}
-    current = None  # active mandate dict
-    current_category = None
-    capturing = False  # inside a *livrables* section
+    stop_phrase = "TECHNOLOGIES UTILISÉES DANS LE CADRE DU MANDAT"
+    result: Dict[str, List[str]] = {}
+    current_cat = None
 
-    for block in iter_blocks(doc):
-        # ------------------------------ Paragraph ------------------------------------
-        if isinstance(block, Paragraph):
-            text = block.text.strip()
-            if not text:
-                continue
+    # Parcours lignes puces
+    for p in paras[start_idx:]:
+        text = p.text.strip()
+        # Stop conditions
+        if stop_phrase in text or text.startswith("Projet :") or text.startswith("Fonction :"):
+            break
+        if text.startswith("•"):
+            # nouvelle catégorie
+            cat = text.lstrip("•").strip().rstrip('.').strip()
+            current_cat = cat
+            result[current_cat] = []
+        elif text.startswith("") and current_cat:
+            # livrable sous la catégorie courante
+            liv = text.lstrip("").strip().rstrip('.').strip()
+            result[current_cat].append(liv)
+        else:
+            continue
 
-            # Start capturing deliverables
-            if "livrables suivants" in text.lower():
-                capturing = True
-                current = {
-                    "Projet": meta.get("Projet", ""),
-                    "Fonction": meta.get("Fonction", ""),
-                    "Categories": {},
-                }
-                current_category = None
-                continue
+    if not result:
+        raise ValueError("Aucun livrable extrait pour la section donnée.")
+    return result
 
-            if capturing:
-                lvl = list_level(block)
-                if lvl is None:  # new category heading (non‑list)
-                    current_category = text
-                    current["Categories"][current_category] = []
-                else:  # deliverable line (list item)
-                    if current_category is None:
-                        continue  # malformed list – ignore
-                    clean = text.rstrip(" .;")
-                    if clean:
-                        current["Categories"][current_category].append(clean)
-            else:
-                # not in deliverables: update meta (tab‑separated cases)
-                if "\t" in text:
-                    parts = [t.strip() for t in text.split("\t")]
-                    if len(parts) >= 2:
-                        key, value = parts[0].lower(), parts[1]
-                        if key.startswith("projet"):
-                            meta["Projet"] = value
-                        elif key.startswith("fonction"):
-                            meta["Fonction"] = value
-        # ------------------------------ Table ----------------------------------------
-        else:  # Table block
-            tbl: Table = block
-            # meta in small 2‑column tables
-            for row in tbl.rows:
-                cells = [c.text.strip() for c in row.cells]
-                if len(cells) >= 2:
-                    key, value = cells[0].lower(), cells[1]
-                    if key.startswith("projet"):
-                        meta["Projet"] = value
-                    elif key.startswith("fonction"):
-                        meta["Fonction"] = value
-
-            # stop marker
-            first_cell = (
-                tbl.cell(0, 0).text.strip().lower() if tbl.rows and tbl.rows[0].cells else ""
-            )
-            if capturing and "technologies utilisées" in first_cell:
-                mandates.append(current)
-                capturing = False
-                current = None
-                current_category = None
-
-    # -------------------------------- Filtering -------------------------------------
-    if fonction:
-        mandates = [m for m in mandates if fonction.lower() in m["Fonction"].lower()]
-    if projet:
-        mandates = [m for m in mandates if projet.lower() in m["Projet"].lower()]
-
-    return mandates
-
-# --------------------------------------------------------------------------------------
-# CLI entry‑point
-# --------------------------------------------------------------------------------------
-
-def main():
-    parser = argparse.ArgumentParser(description="Extract Categorie/Livrables pairs from a CV.")
-    parser.add_argument(
-        "--doc",
-        default="/mnt/data/Bernier_Sylvain_CV_25-06-10 - V2.docx",
-        help="Path to the .docx file (default: latest CV)",
-    )
-    parser.add_argument(
-        "--fonction",
-        help="Return only mandates whose Fonction contains this text (case‑insensitive)",
-    )
-    parser.add_argument(
-        "--projet",
-        help="Return only mandates whose Projet contains this text (case‑insensitive)",
-    )
-    args = parser.parse_args()
-
-    mandates = extract_mandates(args.doc, fonction=args.fonction, projet=args.projet)
-
-    if not mandates:
-        print("No mandates matched your criteria.")
-        return
-
-    for mandate in mandates:
-        for cat, livs in mandate["Categories"].items():
-            print(f"Categoria: {cat}")
-            print(f"Livrables: {', '.join(livs)}\n")
-
-if __name__ == "__main__":
-    main()
+# Exemple simplifié
+doc = Document('/mnt/data/Bernier_Sylvain_CV_25-06-10 - V2.docx')
+print(extract_livrables(
+    doc,
+    "Architecte fonctionnel",
+    "Révision des processus et du système informatique des pensions alimentaires (RPSIPA)"
+))
