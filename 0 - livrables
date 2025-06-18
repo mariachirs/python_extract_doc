@@ -1,0 +1,79 @@
+from docx import Document
+from docx.oxml.ns import qn
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.text.paragraph import Paragraph
+import re
+import pprint
+
+def full_cell_text(cell):
+    return ' '.join(''.join(run.text for run in p.runs) for p in cell.paragraphs).strip()
+
+def normalize(s: str) -> str:
+    return re.sub(r'\s+', ' ', s.replace('\xa0', ' ')).strip().lower()
+
+def is_list_item(paragraph: Paragraph) -> bool:
+    pPr = paragraph._p.pPr
+    return pPr is not None and pPr.find(qn('w:numPr')) is not None
+
+def extract_livrables_by_proj_fonc_grouped(doc: Document, projet_filter: str, fonction_filter: str):
+    pf = normalize(projet_filter)
+    ff = normalize(fonction_filter)
+
+    # Find mandate table
+    detail_idxs = [idx for idx, tbl in enumerate(doc.tables)
+                   if normalize(full_cell_text(tbl.rows[0].cells[0])).startswith("mandat no")]
+    chosen = None
+    for idx in detail_idxs:
+        tbl = doc.tables[idx]
+        pr = full_cell_text(tbl.rows[1].cells[1])
+        fn = full_cell_text(tbl.rows[3].cells[1])
+        if pf in normalize(pr) and ff in normalize(fn):
+            chosen = idx, pr.strip(), fn.strip()
+            break
+    tbl_idx, projet, fonction = chosen
+
+    # Locate XML
+    body = list(doc.element.body.iterchildren())
+    xml_idx = next(i for i,ch in enumerate(body)
+                   if isinstance(ch, CT_Tbl) and doc.tables[tbl_idx]._tbl is ch)
+
+    # Find livrables start
+    start = None
+    for i in range(xml_idx+1, len(body)):
+        if isinstance(body[i], CT_P) and normalize(Paragraph(body[i],doc).text).startswith("les livrables suivants ont été réalisés"):
+            start = i+1
+            break
+
+    # Collect paragraphs
+    paras = []
+    for j in range(start, len(body)):
+        if isinstance(body[j], CT_Tbl):
+            break
+        if isinstance(body[j], CT_P):
+            p = Paragraph(body[j], doc)
+            text = p.text.strip().rstrip('.')
+            if text:
+                paras.append((p, text))
+
+    # Group by numPr detection
+    grouped = []
+    current = None
+    for p, text in paras:
+        if is_list_item(p):
+            if current:
+                current["livrables"].append(text)
+        else:
+            current = {"categorie": text, "livrables": []}
+            grouped.append(current)
+
+    return {"projet": projet, "fonction": fonction, "livrables_by_category": grouped}
+
+# Test
+doc = Document("/mnt/data/Bernier_Sylvain_CV_25-06-17 - V2 - Many Conferences.docx")
+res = extract_livrables_by_proj_fonc_grouped(
+    doc,
+    "Relation entre les caisses et le Registre des droits personnels et réels mobiliers",
+    "Chef d'équipe et analyste fonctionnel"
+)
+pprint.pprint(res, width=120)
