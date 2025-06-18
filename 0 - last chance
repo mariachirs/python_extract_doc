@@ -1,44 +1,30 @@
-# Complete extraction function with robust cell handling and correct row indices
-
 from docx import Document
+import pprint
+
+# Assumes the extract_tasks_by_proj_fonc function is defined in scope
 from docx.oxml.table import CT_Tbl
 from docx.oxml.text.paragraph import CT_P
 from docx.text.paragraph import Paragraph
 import re
 
 def full_cell_text(cell):
-    """
-    Concatenate all text across all paragraphs and runs in a cell.
-    """
     texts = []
     for paragraph in cell.paragraphs:
         texts.append(''.join(run.text for run in paragraph.runs))
     return ' '.join(texts).strip()
 
 def normalize(s: str) -> str:
-    """
-    Lowercase, replace NBSP with space, collapse whitespace.
-    """
     return re.sub(r'\s+', ' ', s.replace('\xa0', ' ')).strip().lower()
 
 def extract_tasks_by_proj_fonc(doc: Document, projet_filter: str, fonction_filter: str):
-    """
-    Extracts tasks grouped by category for a given projet and fonction.
-    - Reads Projet from row 2, Fonction from row 4 in each 'Mandat no' table.
-    - Finds the paragraph "a effectué les tâches suivantes" and collects subsequent bullets.
-    """
     pf = normalize(projet_filter)
     ff = normalize(fonction_filter)
 
-    # 1. Find all "Mandat no" tables
     detail_idxs = [
         idx for idx, tbl in enumerate(doc.tables)
         if normalize(full_cell_text(tbl.rows[0].cells[0])).startswith("mandat no")
     ]
-    if not detail_idxs:
-        raise ValueError("No 'Mandat no' tables found.")
 
-    # 2. Select the table matching filters
     chosen = None
     for idx in detail_idxs:
         tbl = doc.tables[idx]
@@ -47,19 +33,15 @@ def extract_tasks_by_proj_fonc(doc: Document, projet_filter: str, fonction_filte
         if pf in normalize(projet_raw) and ff in normalize(fonction_raw):
             chosen = (idx, projet_raw.strip(), fonction_raw.strip())
             break
-    if not chosen:
-        raise ValueError(f"No mandate matching Projet='{projet_filter}' and Fonction='{fonction_filter}'")
 
     tbl_idx, projet, fonction = chosen
 
-    # 3. Locate XML position of this table
     body_children = list(doc.element.body.iterchildren())
     xml_idx = next(
         i for i, ch in enumerate(body_children)
         if isinstance(ch, CT_Tbl) and doc.tables[tbl_idx]._tbl is ch
     )
 
-    # 4. Find tasks introduction paragraph
     start = None
     for i in range(xml_idx + 1, len(body_children)):
         ch = body_children[i]
@@ -68,10 +50,7 @@ def extract_tasks_by_proj_fonc(doc: Document, projet_filter: str, fonction_filte
             if "a effectué les tâches suivantes" in txt:
                 start = i + 1
                 break
-    if start is None:
-        raise ValueError("Could not find the 'a effectué les tâches suivantes' paragraph")
 
-    # 5. Collect lines until next table
     tasks = []
     for j in range(start, len(body_children)):
         ch = body_children[j]
@@ -79,30 +58,46 @@ def extract_tasks_by_proj_fonc(doc: Document, projet_filter: str, fonction_filte
             break
         if isinstance(ch, CT_P):
             line = Paragraph(ch, doc).text.strip()
-            if line:
-                tasks.append(line)
+            if not line:
+                continue
+            if normalize(line).startswith("les livrables suivants ont été réalisés"):
+                break
+            tasks.append(line)
 
-    # 6. Group by category
-    grouped = {}
+    result_categories = []
     current_cat = None
     for line in tasks:
         if not re.search(r'[;.:]\s*$', line):
             current_cat = line
-            grouped[current_cat] = []
+            result_categories.append({"categorie": current_cat, "tasks": []})
         elif current_cat:
-            grouped[current_cat].append(re.sub(r'[;.]$', '', line).strip())
+            result_categories[-1]["tasks"].append(re.sub(r'[;.]$', '', line).strip())
 
     return {
         "projet": projet,
         "fonction": fonction,
-        "tasks_by_category": grouped
+        "tasks_by_category": result_categories
     }
 
-# Example usage:
-# doc = Document("Bernier_Sylvain_CV_25-06-17 - V2 - Many Conferences.docx")
-# result = extract_tasks_by_proj_fonc(
-#     doc,
-#     projet_filter="Révision des processus et du système informatique des pensions alimentaires",
-#     fonction_filter="Architecte fonctionnel"
-# )
-# print(result)
+# Load document and test all three mandates
+doc = Document("/mnt/data/Bernier_Sylvain_CV_25-06-17 - V2 - Many Conferences.docx")
+
+outputs = [
+    extract_tasks_by_proj_fonc(
+        doc,
+        projet_filter="Révision des processus et du système informatique des pensions alimentaires",
+        fonction_filter="Architecte fonctionnel"
+    ),
+    extract_tasks_by_proj_fonc(
+        doc,
+        projet_filter="Relation entre les caisses et le Registre des droits personnels et réels mobiliers",
+        fonction_filter="Chef d'équipe et analyste fonctionnel"
+    ),
+    extract_tasks_by_proj_fonc(
+        doc,
+        projet_filter="Décentralisation des services à la clientèle",
+        fonction_filter="Chef d'équipe et analyste fonctionnel"
+    )
+]
+
+pprint.pprint(outputs, width=120)
