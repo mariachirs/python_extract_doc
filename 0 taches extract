@@ -1,0 +1,87 @@
+from docx import Document
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.text.paragraph import Paragraph
+import re
+
+def normalize(s: str) -> str:
+    """Lowercase, replace NBSP with space, collapse whitespace."""
+    return re.sub(r'\s+', ' ', s.replace('\xa0', ' ')).strip().lower()
+
+def extract_tasks_by_proj_fonc(doc: Document, projet_filter: str, fonction_filter: str):
+    pf = normalize(projet_filter)
+    ff = normalize(fonction_filter)
+
+    # 1. Find all detail tables by looking for a first‐cell that contains 'mandat no'
+    detail_idxs = []
+    for idx, tbl in enumerate(doc.tables):
+        first = normalize(tbl.rows[0].cells[0].text)
+        if first.startswith("mandat no"):
+            detail_idxs.append(idx)
+
+    if not detail_idxs:
+        raise ValueError("No 'Mandat no' tables found at all.")
+
+    # 2. Among those, pick the one whose Projet/Fonction contains our filters
+    chosen = None
+    for idx in detail_idxs:
+        tbl = doc.tables[idx]
+        kv = {}
+        for row in tbl.rows:
+            key = normalize(row.cells[0].text).rstrip(':')
+            val = row.cells[1].text.strip()
+            kv[key] = val
+        if pf in normalize(kv.get("projet","")) and ff in normalize(kv.get("fonction","")):
+            chosen = (idx, kv["projet"], kv["fonction"])
+            break
+
+    if not chosen:
+        raise ValueError(f"No mandate matching Projet='{projet_filter}' and Fonction='{fonction_filter}'")
+
+    tbl_idx, projet, fonction = chosen
+
+    # 3. Locate that table in the XML so we know where to resume scanning
+    body = list(doc.element.body.iterchildren())
+    xml_idx = next(
+        i for i, ch in enumerate(body)
+        if isinstance(ch, CT_Tbl) and doc.tables[tbl_idx]._tbl is ch
+    )
+
+    # 4. Find the first paragraph *after* that table containing our trigger phrase
+    start = None
+    for i in range(xml_idx+1, len(body)):
+        if isinstance(body[i], CT_P):
+            txt = normalize(Paragraph(body[i], doc).text)
+            # strip trailing colon from detection
+            if "a effectué les tâches suivantes" in txt:
+                start = i+1
+                break
+    if start is None:
+        raise ValueError("Could not find the 'a effectué les tâches suivantes' paragraph")
+
+    # 5. Gather all subsequent non-empty paragraphs until the next table
+    tasks = []
+    for j in range(start, len(body)):
+        if isinstance(body[j], CT_Tbl):
+            break
+        if isinstance(body[j], CT_P):
+            line = Paragraph(body[j], doc).text.strip()
+            if line:
+                tasks.append(line)
+
+    # 6. Group by category: lines without trailing ';', '.', or ':' are categories
+    grouped = {}
+    current_cat = None
+    for line in tasks:
+        if not re.search(r'[;.:]\s*$', line):
+            current_cat = line
+            grouped[current_cat] = []
+        elif current_cat:
+            # remove only the trailing punctuation, keep accents
+            grouped[current_cat].append(re.sub(r'[;.]$', '', line).strip())
+
+    return {
+        "projet": projet,
+        "fonction": fonction,
+        "tasks_by_category": grouped
+    }
