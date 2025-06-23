@@ -1,0 +1,29 @@
+def extract_first_page_footer(file_path):
+    """
+    Load a .docx file and return the text from the footer on the first page.
+    If “Different First Page” is enabled, uses that footer; otherwise falls back to the default footer.
+    """
+    # Open the document
+    doc = Document(file_path)
+
+    # Get the first section
+    section = doc.sections[0]
+
+    # Choose the first-page footer if it’s enabled, otherwise the regular footer
+    if section.different_first_page_header_footer:
+        footer = section.first_page_footer
+    else:
+        footer = section.footer
+
+    # Collect all plain-text paragraphs
+    footer_texts = [para.text for para in footer.paragraphs]
+
+    # Also capture any tables in the footer
+    for table in footer.tables:
+        for row in table.rows:
+            row_cells = [cell.text for cell in row.cells]
+            footer_texts.append(" | ".join(row_cells))
+
+    # Combine everything into a single string
+    return "\n".join(footer_texts)
+
