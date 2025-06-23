@@ -1,0 +1,15 @@
+def remove_trailing(s: str, suffix: str) -> str:
+    """
+    Se `s` terminar com `suffix`, retorna `s` sem esse sufixo.
+    Caso contrário, retorna `s` inalterado.
+    """
+    if not suffix:
+        return s  # nada a remover
+
+    return s[:-len(suffix)] if s.endswith(suffix) else s
+
+# Exemplos de uso
+print(remove_trailing("Hello.", "."))         # "Hello"
+print(remove_trailing("filename.txt", ".txt"))# "filename"
+print(remove_trailing("NoSuffixHere", "!"))   # "NoSuffixHere"
+print(remove_trailing("data.csv.csv", ".csv"))# "data.csv"
