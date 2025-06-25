@@ -1,0 +1,80 @@
+rom docx import Document
+from typing import List, Dict
+
+def extract_all_interventions_with_employer(path: str) -> List[Dict[str, str]]:
+    """
+    Extrait toutes les lignes des tables sous le header "Résumé des interventions"
+    dans un document .docx, en incluant le titre (employeur) précédant chaque table.
+
+    Gère les en-têtes sur deux lignes :
+      - 1re ligne : No, Client, Projet, Fonction, Envergure
+      - 2e ligne : (j-p.), Année, Effort (mois)
+
+    Exclut la colonne '(j-p.)' et renomme la colonne Effort sur une seule clé.
+
+    Retourne une liste de dicts avec clés :
+      'Employer', 'No', 'Client', 'Projet', 'Fonction', 'Envergure',
+      'Année', 'Effort (mois)'
+    """
+    doc = Document(path)
+    paras = doc.paragraphs
+    results: List[Dict[str, str]] = []
+
+    # 1. Repérer l'index du paragraphe header
+    header_idx = next((i for i, p in enumerate(paras)
+                       if 'Résumé des interventions' in p.text), None)
+    if header_idx is None:
+        return results
+    header_el = paras[header_idx]._p
+    header_pos = header_el.getparent().index(header_el)
+
+    # 2. Parcourir chaque table après le header
+    for table in doc.tables:
+        tbl_pos = table._element.getparent().index(table._element)
+        if tbl_pos <= header_pos:
+            continue
+
+        # 3. Employer = paragraphe précédant la table
+        preceding = [p for p in paras
+                     if p._p.getparent().index(p._p) < tbl_pos]
+        if not preceding:
+            continue
+        employer = preceding[-1].text.strip()
+
+        # 4. Header sur deux lignes
+        if len(table.rows) < 3:
+            continue
+        hdr1 = [c.text.strip() for c in table.rows[0].cells]
+        hdr2 = [c.text.strip() for c in table.rows[1].cells]
+
+        # Construction des noms de colonnes, en excluant '(j-p.)'
+        cols: List[str] = []
+        for h in hdr1:
+            if h.lower() in ('no', 'client', 'projet', 'fonction', 'envergure'):
+                cols.append(h)
+        for h in hdr2:
+            if h == '(j-p.)':
+                continue
+            # normaliser la colonne Effort
+            if h.lower().startswith('effort') or 'mois' in h.lower():
+                cols.append('Effort (mois)')
+            else:
+                cols.append(h)
+
+        # 5. Parcourir chaque ligne de données à partir de la 3e ligne
+        for row in table.rows[2:]:
+            cells = [c.text.strip() for c in row.cells]
+            if not cells or not cells[0]:
+                continue
+            entry: Dict[str, str] = {'Employer': employer}
+            for key, value in zip(cols, cells):
+                entry[key] = value
+            results.append(entry)
+
+    return results
+
+# Exemple d'utilisation
+if __name__ == '__main__':
+    path = '/mnt/data/Bernier_Sylvain_CV_25-06-17 - V2 - Many Conferences.docx'
+    for record in extract_all_interventions_with_employer(path):
+        print(record)
