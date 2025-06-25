@@ -1,0 +1,47 @@
+from docx import Document
+
+def get_client_by_project_and_function(
+    doc_source, project: str, fonction: str
+):
+    """
+    Return the Client value matching given project and function.
+    """
+    doc = Document(doc_source) if isinstance(doc_source, str) else doc_source
+    for table in doc.tables:
+        headers = [cell.text.strip() for cell in table.rows[0].cells]
+        if {"Client", "Projet", "Fonction"}.issubset(headers):
+            idx_client = headers.index("Client")
+            idx_project = headers.index("Projet")
+            idx_fonction = headers.index("Fonction")
+            for row in table.rows[1:]:
+                cells = [cell.text.strip() for cell in row.cells]
+                if cells[idx_project] == project and cells[idx_fonction] == fonction:
+                    return cells[idx_client]
+    return None
+
+def list_all_projects_functions(doc_source):
+    """
+    Extract all (Projet, Fonction) pairs from relevant tables.
+    """
+    doc = Document(doc_source) if isinstance(doc_source, str) else doc_source
+    pairs = []
+    for table in doc.tables:
+        headers = [cell.text.strip() for cell in table.rows[0].cells]
+        if {"Client", "Projet", "Fonction"}.issubset(headers):
+            idx_project = headers.index("Projet")
+            idx_fonction = headers.index("Fonction")
+            for row in table.rows[1:]:
+                cells = [cell.text.strip() for cell in row.cells]
+                pairs.append((cells[idx_project], cells[idx_fonction]))
+    return pairs
+
+# Load document and generate output for each mandate
+doc_path = "/mnt/data/Bernier_Sylvain_CV_25-06-17 - V2 - Many Conferences.docx"
+pairs = list_all_projects_functions(doc_path)
+
+for project, fonction in pairs:
+    client = get_client_by_project_and_function(doc_path, project, fonction)
+    print(f"Projet   : {project}")
+    print(f"Fonction : {fonction}")
+    print(f"Client   : {client}")
+    print("-" * 60)
