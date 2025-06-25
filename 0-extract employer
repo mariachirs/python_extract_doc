@@ -1,1 +1,49 @@
 
+from docx import Document
+from typing import List, Dict
+
+def extract_employers_in_docx(
+    path: str,
+    target_projet: str,
+    target_fonction: str
+) -> List[Dict[str, str]]:
+    """
+    Extrait toutes les sections où le couple (Projet, Fonction)
+    apparaît, retourne une liste de dicts {'titre': ..., 'employeur': ...}.
+    """
+    doc = Document(path)
+    paragraphs = doc.paragraphs
+    results: List[Dict[str, str]] = []
+
+    for i, para in enumerate(paragraphs):
+        if 'Résumé des interventions' in para.text:
+            # titre/employeur = paragraphe suivant
+            titre = paragraphs[i+1].text.strip() if i + 1 < len(paragraphs) else ''
+
+            # parcourir les tables qui suivent
+            for tbl in doc.tables:
+                if tbl._element.getparent().index(tbl._element) <= para._p.getparent().index(para._p):
+                    continue
+                # ignorer l'entête
+                for row in tbl.rows[1:]:
+                    cells = [c.text.strip() for c in row.cells]
+                    if len(cells) < 4:
+                        continue
+                    projet, fonction = cells[2], cells[3]
+                    if projet == target_projet and fonction == target_fonction:
+                        results.append({'titre': titre, 'employeur': titre})
+                # continuer à vérifier d'autres tables si besoin
+    return results
+
+# Exemple d'utilisation
+def main():
+    path = 'document.docx'
+    projet = "Révision des processus et du système informatique des pensions alimentaires (RPSIPA)"
+    fonction = "Architecte fonctionnel"
+    matchs = extract_employers_in_docx(path, projet, fonction)
+    print("Employeurs trouvés:")
+    for m in matchs:
+        print(f"- Section '{m['titre']}' -> Employeur: {m['employeur']}")
+
+if __name__ == '__main__':
+    main()
