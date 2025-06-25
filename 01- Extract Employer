@@ -1,0 +1,65 @@
+from docx import Document
+from typing import List, Optional
+
+
+def extract_mandates_with_filter(
+    path: str,
+    target_projet: Optional[str] = None,
+    target_fonction: Optional[str] = None
+) -> List[str]:
+    """
+    Extrait les mandats (employeurs) du document .docx pour chaque table
+    située après le paragraphe "Résumé des interventions".
+    Si target_projet et/ou target_fonction sont spécifiés, ne conserve
+    que les tables contenant la valeur correspondante dans les colonnes
+    Projet (3e colonne) et/ou Fonction (4e colonne).
+
+    :param path: Chemin vers le fichier .docx
+    :param target_projet: Filtre sur le nom du projet (exact match)
+    :param target_fonction: Filtre sur le nom de la fonction (exact match)
+    :return: Liste des titres (mandats) correspondants
+    """
+    doc = Document(path)
+    paras = doc.paragraphs
+    mandates: List[str] = []
+
+    # trouver l'index du paragraphe header
+    header_idx = next(
+        (i for i, p in enumerate(paras) if 'Résumé des interventions' in p.text),
+        None
+    )
+    if header_idx is None:
+        return mandates
+
+    # position XML du header
+    header_el = paras[header_idx]._p
+    header_pos = header_el.getparent().index(header_el)
+
+    # parcourir toutes les tables après le header
+    for table in doc.tables:
+        tbl_el = table._element
+        tbl_pos = tbl_el.getparent().index(tbl_el)
+        if tbl_pos <= header_pos:
+            continue
+
+        # Vérifier filtre sur Projet et Fonction dans la table
+        keep = False
+        for row in table.rows[1:]:  # ignorer l'en-tête
+            cells = [c.text.strip() for c in row.cells]
+            if len(cells) < 4:
+                continue
+            proj, func = cells[2], cells[3]
+            if ((target_projet is None or proj == target_projet) and
+                (target_fonction is None or func == target_fonction)):
+                keep = True
+                break
+        if not keep:
+            continue
+
+        # trouver le paragraphe précédant la table
+        prev_paras = [p for p in paras if p._p.getparent().index(p._p) < tbl_pos]
+        if not prev_paras:
+            continue
+        mandates.append(prev_paras[-1].text.strip())
+
+    return mandates
