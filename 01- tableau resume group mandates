@@ -1,0 +1,91 @@
+from docx import Document
+from typing import List, Dict
+
+def extract_all_interventions_with_employer(path: str) -> List[Dict[str, str]]:
+    """
+    Extrait toutes les lignes des tables sous le header "Résumé des interventions"
+    dans un document .docx, en incluant le titre (employeur) précédant chaque table.
+    Retourne une liste de dicts avec clés :
+      'Employer', 'No', 'Client', 'Projet', 'Fonction',
+      'Envergure', 'Année', 'Effort (mois)'
+    """
+    doc = Document(path)
+    paras = doc.paragraphs
+    results: List[Dict[str, str]] = []
+
+    # 1. Repérer l'index du paragraphe header
+    header_idx = next((i for i, p in enumerate(paras)
+                       if 'Résumé des interventions' in p.text), None)
+    if header_idx is None:
+        return results
+    header_pos = paras[header_idx]._p.getparent().index(paras[header_idx]._p)
+
+    # 2. Parcourir chaque table après le header
+    for table in doc.tables:
+        tbl_pos = table._element.getparent().index(table._element)
+        if tbl_pos <= header_pos:
+            continue
+
+        # 3. Employer = paragraphe précédant la table
+        prev = [p for p in paras if p._p.getparent().index(p._p) < tbl_pos]
+        if not prev:
+            continue
+        employer = prev[-1].text.strip()
+
+        # 4. En-têtes sur deux lignes
+        if len(table.rows) < 3:
+            continue
+        hdr1 = [c.text.strip() for c in table.rows[0].cells]
+        hdr2 = [c.text.strip() for c in table.rows[1].cells]
+
+        # Construire noms de colonnes, excluant '(j-p.)'
+        cols: List[str] = []
+        for h in hdr1:
+            if h.lower() in ('no', 'client', 'projet', 'fonction', 'envergure'):
+                cols.append(h)
+        for h in hdr2:
+            if h == '(j-p.)':
+                continue
+            if h.lower().startswith('effort') or 'mois' in h.lower():
+                cols.append('Effort (mois)')
+            else:
+                cols.append(h)
+
+        # 5. Parcourir chaque ligne de données (à partir de la 3e ligne)
+        for row in table.rows[2:]:
+            cells = [c.text.strip() for c in row.cells]
+            if not cells or not cells[0]:
+                continue
+            entry: Dict[str, str] = {'Employer': employer}
+            for key, value in zip(cols, cells):
+                entry[key] = value
+            results.append(entry)
+
+    return results
+
+def group_interventions_by_employer(data: List[Dict[str, str]]) -> Dict[str, List[Dict[str, str]]]:
+    """
+    Regroupe la liste des interventions par Employer.
+    """
+    grouped: Dict[str, List[Dict[str, str]]] = {}
+    for rec in data:
+        emp = rec.get('Employer', 'Unknown')
+        grouped.setdefault(emp, []).append(rec)
+    return grouped
+
+if __name__ == '__main__':
+    path = '/mnt/data/Bernier_Sylvain_CV_25-06-17 - V2 - Many Conferences.docx'
+    all_data = extract_all_interventions_with_employer(path)
+    grouped = group_interventions_by_employer(all_data)
+
+    for emp, records in grouped.items():
+        print(f"Employer: {emp}")
+        for rec in records:
+            print(f"  - No: {rec['No']}")
+            print(f"    Client       : {rec['Client']}")
+            print(f"    Projet       : {rec['Projet']}")
+            print(f"    Fonction     : {rec['Fonction']}")
+            print(f"    Envergure    : {rec['Envergure']}")
+            print(f"    Année        : {rec['Année']}")
+            print(f"    Effort (mois): {rec['Effort (mois)']}")
+        print()
