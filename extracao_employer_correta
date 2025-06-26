@@ -1,0 +1,44 @@
+from typing import List, Tuple
+from docx import Document
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.text.paragraph import Paragraph
+from docx.table import Table
+
+def extract_employers(doc_path: str, filters: Tuple[str, str] = ("Client", "Projet")) -> List[str]:
+    """
+    Extrai os nomes dos empregadores localizados imediatamente acima de cada tabela
+    que contenha ambas colunas especificadas em 'filters'.
+
+    Args:
+        doc_path (str): Caminho para o arquivo .docx.
+        filters (Tuple[str, str]): Nomes das colunas a buscar na primeira linha da tabela.
+                                  Exemplo: ("Client", "Projet").
+
+    Returns:
+        List[str]: Lista de nomes de empregadores encontrados.
+    """
+    doc = Document(doc_path)
+    elements: List[Tuple[str, object]] = []
+
+    # Intercala parágrafos e tabelas conforme aparecem no documento
+    for child in doc.element.body:
+        if isinstance(child, CT_P):
+            elements.append(("p", Paragraph(child, doc)))
+        elif isinstance(child, CT_Tbl):
+            elements.append(("t", Table(child, doc)))
+
+    employers: List[str] = []
+    # Percorre elementos para identificar tabelas que atendem aos filtros
+    for idx, (etype, elem) in enumerate(elements):
+        if etype == 't':
+            headers = [cell.text.strip() for cell in elem.rows[0].cells]
+            if all(f in headers for f in filters):
+                # busca parágrafo não vazio imediatamente acima da tabela
+                for j in range(idx - 1, -1, -1):
+                    if elements[j][0] == 'p':
+                        text = elements[j][1].text.strip()
+                        if text:
+                            employers.append(text)
+                            break
+    return employers
