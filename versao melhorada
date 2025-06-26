@@ -1,0 +1,66 @@
+# Test all four cases with the client parameter
+
+from docx import Document
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.text.paragraph import Paragraph
+from docx.table import Table
+
+def extract_employer(doc_path: str, projet: str, fonction: str, client: str) -> str:
+    """
+    Extracts and returns the employer name located immediately above the first table
+    where a row matches the given projet, fonction, and client values.
+    """
+    document = Document(doc_path)
+    elements = []
+    for child in document.element.body:
+        if isinstance(child, CT_P):
+            elements.append(("p", Paragraph(child, document)))
+        elif isinstance(child, CT_Tbl):
+            elements.append(("t", Table(child, document)))
+
+    for idx, (etype, tbl) in enumerate(elements):
+        if etype != 't':
+            continue
+        headers = [c.text.strip() for c in tbl.rows[0].cells]
+        # require all three columns to exist
+        if not all(col in headers for col in ("Projet", "Fonction", "Client")):
+            continue
+        i_proj = headers.index("Projet")
+        i_fonc = headers.index("Fonction")
+        i_cli  = headers.index("Client")
+        # scan data rows
+        for row in tbl.rows[1:]:
+            cells = [c.text.strip() for c in row.cells]
+            if (cells[i_proj] == projet
+                and cells[i_fonc]  == fonction
+                and cells[i_cli]   == client):
+                # grab paragraph immediately above
+                for j in range(idx-1, -1, -1):
+                    if elements[j][0] == 'p':
+                        txt = elements[j][1].text.strip()
+                        if txt:
+                            return txt
+                return ""
+    return ""
+
+doc = "/mnt/data/MARTINS_Roni_CV_23-03_full_2023_Correct_Tableau_Resume.docx"
+
+cases = [
+    ("Active Web Services : conversion et soutien des applications en place",
+     "Programmeur",
+     "Industrielle Alliance"),
+    ("Transfert de connaissances à l'équipe de soutien \nd’Amérique latine",
+     "Analyste-programmeur",
+     "Merck Sharp Dohme Latam"),
+    ("Développements internes",
+     "Analyste-programmeur",
+     "CWI"),
+    ("Développements internes",
+     "Analyste-programmeur",
+     "BCS Automação"),
+]
+
+for projet, fonction, client in cases:
+    employer = extract_employer(doc, projet, fonction, client)
+    print(f"Proje t= {projet!r}\nFonction= {fonction!r}\nClient= {client!r}\n→ Employer: {employer!r}\n")
