@@ -1,0 +1,54 @@
+from docx import Document
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.text.paragraph import Paragraph
+from docx.table import Table
+
+def extract_employer(doc_path: str, projet: str, fonction: str) -> str:
+    """
+    Extracts and returns the employer name located immediately above the table
+    where a row has both the specified projet and fonction values under
+    the 'Projet' and 'Fonction' columns.
+
+    Args:
+        doc_path (str): Path to the .docx file.
+        projet (str): Exact value to match in the 'Projet' column.
+        fonction (str): Exact value to match in the 'Fonction' column.
+
+    Returns:
+        str: Employer name or empty string if not found.
+    """
+    document = Document(doc_path)
+    elements = []
+
+    # Build sequence of paragraphs and tables as they appear
+    for child in document.element.body:
+        if isinstance(child, CT_P):
+            elements.append(("p", Paragraph(child, document)))
+        elif isinstance(child, CT_Tbl):
+            elements.append(("t", Table(child, document)))
+
+    # Search each table for matching row
+    for idx, (etype, elem) in enumerate(elements):
+        if etype == 't':
+            table: Table = elem
+            # map header names to column indices
+            header_cells = [cell.text.strip() for cell in table.rows[0].cells]
+            try:
+                i_projet = header_cells.index("Projet")
+                i_fonction = header_cells.index("Fonction")
+            except ValueError:
+                continue  # this table lacks the needed columns
+
+            # scan data rows
+            for row in table.rows[1:]:
+                vals = [cell.text.strip() for cell in row.cells]
+                if vals[i_projet] == projet and vals[i_fonction] == fonction:
+                    # found row: get the paragraph immediately above this table
+                    for j in range(idx - 1, -1, -1):
+                        if elements[j][0] == 'p':
+                            text = elements[j][1].text.strip()
+                            if text:
+                                return text
+                    return ""
+    return ""
