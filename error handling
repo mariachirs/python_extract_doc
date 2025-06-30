@@ -1,0 +1,86 @@
+Absolutely — let’s make the decorator environment-aware, so:
+
+In development, it returns detailed error output
+
+In production, it shows only simple message and method name
+
+✅ Plan: Auto-Detect Flask Environment
+Flask sets the environment via:
+
+bash
+Copier
+Modifier
+export FLASK_ENV=development  # or production
+Inside Python, you can get it from:
+
+python
+Copier
+Modifier
+from flask import current_app
+current_app.config["ENV"]  # returns 'development' or 'production'
+✅ Updated Decorator: Environment-Aware Error Output
+python
+Copier
+Modifier
+import logging
+import traceback
+import inspect
+from flask import Flask, jsonify, current_app
+from functools import wraps
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def log_errors():
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                func_name = func.__name__
+
+                try:
+                    env = current_app.config.get("ENV", "production").lower()
+                    detailed = env == 'development'
+                except RuntimeError:
+                    # fallback if outside app context
+                    detailed = False
+
+                if detailed:
+                    tb = traceback.extract_tb(e.__traceback__)
+                    last_frame = tb[-1]
+                    filename = last_frame.filename
+                    lineno = last_frame.lineno
+                    line = last_frame.line
+
+                    sig = inspect.signature(func)
+                    bound_args = sig.bind_partial(*args, **kwargs)
+                    bound_args.apply_defaults()
+
+                    logging.error(f"[{func_name}] {e} at {filename}:{lineno}")
+                    logging.debug("Traceback:\n%s", ''.join(traceback.format_exception(type(e), e, e.__traceback__)))
+
+                    return jsonify({
+                        'error': str(e),
+                        'function': func_name,
+                        'file': filename,
+                        'line': lineno,
+                        'code': line,
+                        'args': str(bound_args.arguments)
+                    }), 500
+                else:
+                    logging.error(f"[{func_name}] {e}")
+                    return jsonify({
+                        'error': str(e),
+                        'function': func_name
+                    }), 500
+        return wrapper
+    return decorator
+🔧 Usage
+python
+Copier
+Modifier
+@app.route('/test/<int:a>/<int:b>')
+@log_errors()
+def test_divide(a, b):
+    return jsonify({'result': a / b})
