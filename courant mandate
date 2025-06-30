@@ -1,0 +1,56 @@
+def get_mandate_number_with_a_ce_jour(docx_path):
+    doc = Document(docx_path)
+    target_table = None
+    found_resume = False
+
+    # Scan paragraphs to find the section
+    for para in doc.paragraphs:
+        if "Résumé des interventions" in para.text:
+            found_resume = True
+            break
+
+    if not found_resume:
+        return None
+
+    from docx.oxml.text.paragraph import CT_P
+    from docx.oxml.table import CT_Tbl
+    from docx.table import Table
+
+    resume_found = False
+    for block in doc.element.body:
+        if isinstance(block, CT_P):
+            para = block.xpath('.//w:t')
+            if para and "Résumé des interventions" in "".join([t.text for t in para if t.text]):
+                resume_found = True
+        elif isinstance(block, CT_Tbl) and resume_found:
+            target_table = Table(block, doc)
+            break
+
+    if not target_table:
+        return None
+
+    # Find indexes for "No" and "Année"
+    header_cells = target_table.rows[0].cells
+    no_col_idx = None
+    annee_col_idx = None
+    for idx, cell in enumerate(header_cells):
+        if "No" in cell.text:
+            no_col_idx = idx
+        if "Année" in cell.text:
+            annee_col_idx = idx
+
+    if no_col_idx is None or annee_col_idx is None:
+        return None
+
+    # Check each row for "à ce jour" in Année column
+    for row in target_table.rows[1:]:
+        annee_val = row.cells[annee_col_idx].text.strip()
+        if "à ce jour" in annee_val:
+            no_val = row.cells[no_col_idx].text.strip()
+            return int(no_val) if no_val.isdigit() else no_val
+
+    return None
+
+# Run the function and get the mandate number
+mandate_a_ce_jour = get_mandate_number_with_a_ce_jour(file_path)
+mandate_a_ce_jour
