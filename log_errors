@@ -1,0 +1,66 @@
+import logging
+import traceback
+import inspect
+import os
+import asyncio
+from functools import wraps
+from fastapi.responses import JSONResponse
+
+# Logging setup
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def log_errors():
+    def decorator(func):
+        is_coroutine = asyncio.iscoroutinefunction(func)
+
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                return handle_exception(e, func, args, kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                return handle_exception(e, func, args, kwargs)
+
+        return async_wrapper if is_coroutine else sync_wrapper
+
+    return decorator
+
+def handle_exception(e, func, args, kwargs):
+    func_name = func.__name__
+    env = os.getenv('ENV', 'production').lower()
+    detailed = env == 'development'
+
+    if detailed:
+        tb = traceback.extract_tb(e.__traceback__)
+        last_frame = tb[-1]
+        filename = last_frame.filename
+        lineno = last_frame.lineno
+        line = last_frame.line
+
+        sig = inspect.signature(func)
+        bound_args = sig.bind_partial(*args, **kwargs)
+        bound_args.apply_defaults()
+
+        logging.error(f"[{func_name}] {e} at {filename}:{lineno}")
+        logging.debug("Traceback:\n%s", ''.join(traceback.format_exception(type(e), e, e.__traceback__)))
+
+        return JSONResponse(status_code=500, content={
+            'error': str(e),
+            'function': func_name,
+            'file': filename,
+            'line': lineno,
+            'code': line,
+            'args': str(bound_args.arguments)
+        })
+    else:
+        logging.error(f"[{func_name}] {e}")
+        return JSONResponse(status_code=500, content={
+            'error': str(e),
+            'function': func_name
+        })
