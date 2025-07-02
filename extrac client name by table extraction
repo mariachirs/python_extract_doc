@@ -1,0 +1,43 @@
+from docx import Document
+
+def get_client_by_mandat_from_tables(doc_path, mandat_no):
+    doc = Document(doc_path)
+    paragraphs = [p.text.strip() for p in doc.paragraphs]
+    
+    # Trouver où chaque table commence dans la séquence des paragraphs
+    para_idx = 0
+    tables_start_indices = []
+    for block in doc.element.body:
+        if block.tag.endswith('tbl'):
+            tables_start_indices.append(para_idx)
+        elif block.tag.endswith('p'):
+            para_idx += 1
+
+    for t_idx, table in enumerate(doc.tables):
+        found = False
+        for row in table.rows:
+            for cidx, cell in enumerate(row.cells[:-1]):  # On s'arrête à l'avant-dernière cellule
+                cell_text = cell.text.strip().lower().replace(' ', ' ')
+                if cell_text in ["mandat no", "mandat no:"]:
+                    # Lire la cellule de droite
+                    right_cell = row.cells[cidx + 1].text.strip()
+                    if right_cell == str(mandat_no):
+                        found = True
+                        break
+            if found:
+                break
+
+        if found:
+            # On prend le client au-dessus du tableau dans les paragraphs
+            start_para = tables_start_indices[t_idx] if t_idx < len(tables_start_indices) else 0
+            for k in range(start_para - 1, -1, -1):
+                if paragraphs[k]:
+                    return paragraphs[k]
+    return None
+
+# ==== Exemple d'utilisation ====
+doc_path = 'Bernier_Sylvain_CV_25-07 v2 2_Sans_Table_Mandat_3 - Copie.docx'
+
+print(get_client_by_mandat_from_tables(doc_path, 16))
+print(get_client_by_mandat_from_tables(doc_path, 9))
+print(get_client_by_mandat_from_tables(doc_path, 1))
