@@ -1,0 +1,48 @@
+from docx import Document
+
+def get_group_client_by_mandat(document, mandatno):
+    """
+    Returns the section/group client (header above the table) for a given mandate number.
+    
+    Args:
+        document: A loaded python-docx Document object.
+        mandatno: The mandate number (int or str).
+    
+    Returns:
+        The group client name as a string, or None if not found.
+    """
+    mandatno_str = str(mandatno).strip()
+    last_section_header = None
+
+    # Prepare a flat list of document blocks (type, object)
+    blocks = []
+    for para in document.paragraphs:
+        blocks.append(('para', para))
+    for table in document.tables:
+        blocks.append(('table', table))
+
+    # Walk through blocks in document order
+    for block_type, obj in blocks:
+        if block_type == 'para':
+            text = obj.text.strip()
+            # Heuristic: likely a section header if not empty, not a number, not 'No', not 'Résumé', and at least 2 chars
+            if text and len(text) > 2 and not text.lower().startswith("no") and not text.lower().startswith("résumé"):
+                last_section_header = text
+        elif block_type == 'table':
+            table = obj
+            if not table.rows:
+                continue
+            headers = [cell.text.strip().lower() for cell in table.rows[0].cells]
+            if "no" in headers:
+                idx_no = headers.index("no")
+                for row in table.rows[1:]:
+                    no_cell = row.cells[idx_no].text.strip()
+                    if no_cell == mandatno_str:
+                        return last_section_header
+    return None
+
+# Usage example:
+# from docx import Document
+# doc = Document("MARTINS_Roni_CV_24-04-22_Updated.docx")
+# client_group = get_group_client_by_mandat(doc, 8)
+# print(client_group)  # Output: Wipro Brazil - consultation en technologie
