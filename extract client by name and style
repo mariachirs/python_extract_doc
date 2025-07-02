@@ -1,0 +1,31 @@
+from docx import Document
+import re
+
+def get_client_by_mandatno(docx_path, mandatno, style_name="Heading 1"):
+    """
+    Returns the client name as a string for the given mandatno by searching paragraphs
+    with the specified style name just before the 'Mandat no' line.
+    
+    :param docx_path: Path to your DOCX file
+    :param mandatno: Mandate number (int or str)
+    :param style_name: Paragraph style name used for client headers (default 'Heading 1')
+    :return: Client name as string, or None if not found
+    """
+    document = Document(docx_path)
+    mandatno_str = str(mandatno).strip()
+    last_client = None
+
+    for para in document.paragraphs:
+        # Remember client name if the paragraph uses the client header style
+        if para.style and para.style.name == style_name:
+            last_client = para.text.strip()
+        # Look for 'Mandat no' and check if mandatno matches
+        if "Mandat no" in para.text:
+            found_numbers = re.findall(r'(\d+)', para.text)
+            if mandatno_str in found_numbers:
+                return last_client
+    return None
+
+# Example usage:
+client = get_client_by_mandatno("MARTINS_Roni_CV_24-04-22_Updated.docx", 1, style_name="Heading 1")
+print(client)  # Should print: BCS AUTOMAÇÃO
