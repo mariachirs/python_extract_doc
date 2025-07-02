@@ -1,0 +1,29 @@
+import re
+
+def get_section_header_by_mandat(document, mandatno):
+    mandatno_str = str(mandatno).strip()
+    last_section_header = None
+    paragraphs = document.paragraphs
+    n = len(paragraphs)
+    for i, para in enumerate(paragraphs):
+        text = para.text.strip()
+        # Heuristic for section header
+        if text and len(text) > 2 and not text.lower().startswith("no") and not text.lower().startswith("résumé"):
+            last_section_header = text
+        if "Mandat no" in text:
+            # Sometimes the number is in the next paragraph
+            if mandatno_str in text:
+                return last_section_header
+            elif i + 1 < n:
+                next_text = paragraphs[i + 1].text.strip()
+                if next_text == mandatno_str:
+                    return last_section_header
+    return None
+
+# Usage
+from docx import Document
+doc = Document("Bernier_Sylvain_CV_25-07 v2 2_Sans_Table_Mandat_3 - Copie.docx")
+
+for mandat in [15, 1, 6, 3]:
+    header = get_section_header_by_mandat(doc, mandat)
+    print(f"Mandat {mandat}: {header}")
