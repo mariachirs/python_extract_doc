@@ -1,0 +1,37 @@
+from docx import Document
+from docx.shared import Pt
+
+def get_client_by_mandat(docx_path, mandat_no):
+    """
+    Find the client for a given mandat number by scanning for paragraphs with:
+    - Font: IBM Plex Sans
+    - Size: 16 pt
+
+    Args:
+        docx_path (str): Path to the .docx file
+        mandat_no (int or str): Mandat number to find
+
+    Returns:
+        str or None: Client name, or None if not found
+    """
+    document = Document(docx_path)
+    mandat_str = str(mandat_no).strip()
+    last_client = None
+
+    for para in document.paragraphs:
+        # Check for the header style by font and size
+        for run in para.runs:
+            if run.font.name and 'IBM Plex Sans' in run.font.name and run.font.size == Pt(16):
+                last_client = para.text.strip()
+        # Now check if this para is a "Mandat no" line with our target number
+        if "Mandat no" in para.text:
+            # Get all numbers in the "Mandat no" line (can be more than one)
+            import re
+            found_numbers = re.findall(r'(\d+)', para.text)
+            if mandat_str in found_numbers:
+                return last_client
+    return None
+
+# Example usage:
+client = get_client_by_mandat("MARTINS_Roni_CV_24-04-22_Updated.docx", 1)
+print(client)  # Output: BCS AUTOMAÇÃO
