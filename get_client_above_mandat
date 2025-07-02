@@ -1,0 +1,15 @@
+def get_client_above_mandat(doc_path, mandat_no):
+    doc = Document(doc_path)
+    paragraphs = [p.text.strip() for p in doc.paragraphs]
+    mandat_regex = re.compile(r"^Mandat no *:? *$", re.IGNORECASE)
+
+    for i, para in enumerate(paragraphs):
+        if mandat_regex.match(para):
+            # Cherche le numéro juste en-dessous
+            j = i + 1
+            while j < len(paragraphs) and not paragraphs[j]:
+                j += 1
+            if j < len(paragraphs) and paragraphs[j] == str(mandat_no):
+                if i - 1 >= 0 and paragraphs[i - 1]:
+                    return paragraphs[i - 1]
+    return None
