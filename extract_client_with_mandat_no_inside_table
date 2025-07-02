@@ -1,0 +1,37 @@
+from docx import Document
+import re
+
+def get_client_by_mandatno(docx_path, mandatno, style_name="Heading 1"):
+    """
+    Returns the client name as a string for the given mandatno by searching all paragraphs and all tables.
+    Assumes client name is found just before the mandate section, as a styled paragraph.
+    """
+    document = Document(docx_path)
+    mandatno_str = str(mandatno).strip()
+    last_client = None
+
+    # Prepare a flat list of (type, object) for document walking
+    blocks = []
+    for para in document.paragraphs:
+        blocks.append(('para', para))
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    blocks.append(('table_para', para))
+
+    # Walk the blocks in order
+    for block_type, para in blocks:
+        # Only update last_client for outside-table paragraphs
+        if block_type == 'para' and para.style and para.style.name == style_name:
+            last_client = para.text.strip()
+        # Check for 'Mandat no' in all paras
+        if "Mandat no" in para.text:
+            found_numbers = re.findall(r'(\d+)', para.text)
+            if mandatno_str in found_numbers:
+                return last_client
+    return None
+
+# Example usage:
+client = get_client_by_mandatno("MARTINS_Roni_CV_24-04-22_Updated.docx", 1, style_name="Heading 1")
+print(client)
