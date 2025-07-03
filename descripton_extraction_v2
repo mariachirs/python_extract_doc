@@ -1,0 +1,65 @@
+from docx import Document
+import unicodedata
+
+def normalize(s):
+    """Normalize text for accent/case-insensitive matching."""
+    s = s.lower().strip()
+    s = ''.join(
+        c for c in unicodedata.normalize('NFD', s)
+        if unicodedata.category(c) != 'Mn'
+    )
+    return s
+
+def extract_mandate_description_after_table(docx_path, mandate_no):
+    """
+    Extract the description for a given mandate number.
+    - Finds the two-cell table where the second cell is the mandate number.
+    - Returns the first paragraph after this table, up to 'a effectué les tâches suivantes'.
+    """
+    doc = Document(docx_path)
+    tables = list(doc.tables)
+    target_idx = None
+    for t_idx, table in enumerate(tables):
+        if len(table.rows) > 0 and len(table.rows[0].cells) > 1:
+            cell0 = normalize(table.rows[0].cells[0].text)
+            cell1 = normalize(table.rows[0].cells[1].text)
+            if "mandat no" in cell0 and normalize(str(mandate_no)) == cell1:
+                target_idx = t_idx
+                break
+    if target_idx is None:
+        return None
+
+    # Scan document elements in order to find this table, then paragraphs after it
+    blocks = []
+    for block in doc.element.body:
+        if block.tag.endswith('tbl'):
+            blocks.append(('table', block))
+        elif block.tag.endswith('p'):
+            blocks.append(('paragraph', block))
+
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+    table_counter = -1
+    after_table = False
+    desc_paras = []
+
+    for block_type, block in blocks:
+        if block_type == 'table':
+            table_counter += 1
+            if table_counter == target_idx:
+                after_table = True
+        elif after_table and block_type == 'paragraph':
+            para = Paragraph(block, doc)
+            norm_txt = normalize(para.text)
+            if "a effectue les taches suivantes" in norm_txt:
+                break
+            if para.text.strip():
+                desc_paras.append(para.text.strip())
+        elif not after_table:
+            continue
+
+    return desc_paras[0] if desc_paras else None
+
+# Example usage:
+# desc = extract_mandate_description_after_table("your_cv.docx", 1)
+# print(desc)
