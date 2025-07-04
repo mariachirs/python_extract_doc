@@ -1,0 +1,70 @@
+from docx import Document
+import unicodedata
+
+def normalize(s):
+    """Case- and accent-insensitive normalization."""
+    s = s.lower().strip()
+    s = ''.join(
+        c for c in unicodedata.normalize('NFD', s)
+        if unicodedata.category(c) != 'Mn'
+    )
+    return s
+
+def extract_precise_project_description(docx_path, mandate_no):
+    """
+    Extracts all consecutive paragraphs after the 'Mandat no :' table
+    and stops BEFORE any marker like 'M. Bernier a effectué les tâches suivantes'.
+    Returns the full project description as a string.
+    """
+    doc = Document(docx_path)
+    tables = list(doc.tables)
+    target_idx = None
+    # Find the correct mandate table
+    for t_idx, table in enumerate(tables):
+        if len(table.rows) > 0 and len(table.rows[0].cells) > 1:
+            cell0 = normalize(table.rows[0].cells[0].text)
+            cell1 = normalize(table.rows[0].cells[1].text)
+            if "mandat no" in cell0 and normalize(str(mandate_no)) == cell1:
+                target_idx = t_idx
+                break
+    if target_idx is None:
+        return None
+
+    # Get document elements in order
+    blocks = []
+    for block in doc.element.body:
+        if block.tag.endswith('tbl'):
+            blocks.append(('table', block))
+        elif block.tag.endswith('p'):
+            blocks.append(('paragraph', block))
+
+    from docx.text.paragraph import Paragraph
+    table_counter = -1
+    after_table = False
+    description_paragraphs = []
+
+    for block_type, block in blocks:
+        if block_type == 'table':
+            table_counter += 1
+            if table_counter == target_idx:
+                after_table = True
+        elif after_table and block_type == 'paragraph':
+            para = Paragraph(block, doc)
+            norm_txt = normalize(para.text)
+            # Stop on any task marker
+            if (
+                "a effectue les taches suivantes" in norm_txt
+                or "taches realisees" in norm_txt
+                or "principales realisations" in norm_txt
+            ):
+                break
+            if para.text.strip():
+                description_paragraphs.append(para.text.strip())
+        elif not after_table:
+            continue
+
+    return "\n\n".join(description_paragraphs) if description_paragraphs else None
+
+# Example usage:
+# description = extract_precise_project_description("your_cv.docx", 15)
+# print(description)
