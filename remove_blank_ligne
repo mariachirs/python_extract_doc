@@ -1,0 +1,13 @@
+def remove_blank_rows_from_table(table):
+    """
+    Remove all rows from the given python-docx Table object
+    where all cells are empty or whitespace.
+    """
+    rows_to_remove = []
+    for row in table.rows:
+        if all(cell.text.strip() == '' for cell in row.cells):
+            rows_to_remove.append(row)
+
+    for row in rows_to_remove:
+        tbl = row._tr.getparent()
+        tbl.remove(row._tr)
