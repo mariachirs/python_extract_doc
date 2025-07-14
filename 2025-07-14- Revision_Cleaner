@@ -1,0 +1,100 @@
+📄 docx_revision_cleaner.py
+python
+Copier
+Modifier
+import zipfile
+import shutil
+import os
+import tempfile
+import xml.etree.ElementTree as ET
+from docx import Document
+
+NAMESPACES = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+ET.register_namespace('w', NAMESPACES['w'])
+
+def _has_revisions(path):
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+        return root.find(".//w:ins", NAMESPACES) is not None or root.find(".//w:del", NAMESPACES) is not None
+    except ET.ParseError:
+        return False
+
+def _clean_revisions(path):
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+
+        for del_tag in list(root.findall(".//w:del", NAMESPACES)):
+            parent = del_tag.getparent() if hasattr(del_tag, "getparent") else None
+            if parent is not None:
+                parent.remove(del_tag)
+            else:
+                root.remove(del_tag)
+
+        for ins_tag in list(root.findall(".//w:ins", NAMESPACES)):
+            parent = ins_tag.getparent() if hasattr(ins_tag, "getparent") else None
+            children = list(ins_tag)
+            if parent is not None:
+                index = list(parent).index(ins_tag)
+                for child in reversed(children):
+                    parent.insert(index, child)
+                parent.remove(ins_tag)
+
+        tree.write(path, encoding='utf-8', xml_declaration=True)
+    except ET.ParseError:
+        pass
+
+def load_clean_docx(docx_path: str) -> Document:
+    """
+    Aceita todas as revisões de um arquivo .docx (corpo, headers, footers, footnotes, endnotes, comments)
+    e retorna um objeto python-docx Document pronto para uso.
+    """
+    temp_dir = tempfile.mkdtemp()
+    word_folder = os.path.join(temp_dir, "word")
+
+    with zipfile.ZipFile(docx_path, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
+
+    targets = ["document.xml", "footnotes.xml", "endnotes.xml", "comments.xml"]
+    xml_files = []
+
+    for t in targets:
+        path = os.path.join(word_folder, t)
+        if os.path.exists(path):
+            xml_files.append(path)
+
+    for fname in os.listdir(word_folder):
+        if fname.startswith(("header", "footer")) and fname.endswith(".xml"):
+            xml_files.append(os.path.join(word_folder, fname))
+
+    has_revisions = any(_has_revisions(path) for path in xml_files)
+
+    if has_revisions:
+        for path in xml_files:
+            _clean_revisions(path)
+
+        cleaned_path = os.path.join(temp_dir, "cleaned.docx")
+        with zipfile.ZipFile(cleaned_path, 'w', zipfile.ZIP_DEFLATED) as docx:
+            for foldername, _, filenames in os.walk(temp_dir):
+                for filename in filenames:
+                    file_path = os.path.join(foldername, filename)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    docx.write(file_path, arcname)
+
+        doc = Document(cleaned_path)
+    else:
+        doc = Document(docx_path)
+
+    shutil.rmtree(temp_dir)
+    return doc
+✅ Como usar no seu script:
+python
+Copier
+Modifier
+from docx_revision_cleaner import load_clean_docx
+
+doc = load_clean_docx("caminho/para/seuarquivo.docx")
+
+for para in doc.paragraphs:
+    print(para.text)
