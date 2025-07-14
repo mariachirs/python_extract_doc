@@ -1,32 +1,32 @@
-📁 docx_revision_cleaner.py
-python
-Copier
-Modifier
+import io
 import zipfile
-import shutil
-import os
-import tempfile
 import xml.etree.ElementTree as ET
-from docx import Document
 from typing import Union
 from fastapi import UploadFile
+from docx import Document
 
 NAMESPACES = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 ET.register_namespace('w', NAMESPACES['w'])
 
-def _has_revisions(path):
+def _has_revisions(xml: bytes) -> bool:
+    """
+    Check if the given XML content contains tracked revisions (insertions or deletions).
+    """
     try:
-        tree = ET.parse(path)
-        root = tree.getroot()
+        root = ET.fromstring(xml)
         return root.find(".//w:ins", NAMESPACES) is not None or root.find(".//w:del", NAMESPACES) is not None
     except ET.ParseError:
         return False
 
-def _clean_revisions(path):
+def _clean_revisions(xml: bytes) -> bytes:
+    """
+    Remove <w:del> and flatten <w:ins> tags, accepting all changes.
+    Returns cleaned XML as bytes.
+    """
     try:
-        tree = ET.parse(path)
-        root = tree.getroot()
+        root = ET.fromstring(xml)
 
+        # Remove <w:del> (deletions)
         for del_tag in list(root.findall(".//w:del", NAMESPACES)):
             parent = del_tag.getparent() if hasattr(del_tag, "getparent") else None
             if parent is not None:
@@ -34,6 +34,7 @@ def _clean_revisions(path):
             else:
                 root.remove(del_tag)
 
+        # Flatten <w:ins> (keep inserted content)
         for ins_tag in list(root.findall(".//w:ins", NAMESPACES)):
             parent = ins_tag.getparent() if hasattr(ins_tag, "getparent") else None
             children = list(ins_tag)
@@ -43,65 +44,53 @@ def _clean_revisions(path):
                     parent.insert(index, child)
                 parent.remove(ins_tag)
 
-        tree.write(path, encoding='utf-8', xml_declaration=True)
+        return ET.tostring(root, encoding='utf-8', xml_declaration=True)
     except ET.ParseError:
-        pass
+        return xml
 
-def _accept_revisions_on_disk(docx_path: str) -> Document:
-    temp_dir = tempfile.mkdtemp()
-    word_folder = os.path.join(temp_dir, "word")
-
-    with zipfile.ZipFile(docx_path, 'r') as zip_ref:
-        zip_ref.extractall(temp_dir)
-
-    targets = ["document.xml", "footnotes.xml", "endnotes.xml", "comments.xml"]
-    xml_files = []
-
-    for t in targets:
-        path = os.path.join(word_folder, t)
-        if os.path.exists(path):
-            xml_files.append(path)
-
-    for fname in os.listdir(word_folder):
-        if fname.startswith(("header", "footer")) and fname.endswith(".xml"):
-            xml_files.append(os.path.join(word_folder, fname))
-
-    has_revisions = any(_has_revisions(path) for path in xml_files)
-
-    if has_revisions:
-        for path in xml_files:
-            _clean_revisions(path)
-
-        cleaned_path = os.path.join(temp_dir, "cleaned.docx")
-        with zipfile.ZipFile(cleaned_path, 'w', zipfile.ZIP_DEFLATED) as docx:
-            for foldername, _, filenames in os.walk(temp_dir):
-                for filename in filenames:
-                    file_path = os.path.join(foldername, filename)
-                    arcname = os.path.relpath(file_path, temp_dir)
-                    docx.write(file_path, arcname)
-
-        doc = Document(cleaned_path)
-    else:
-        doc = Document(docx_path)
-
-    shutil.rmtree(temp_dir)
-    return doc
-
-def load_clean_docx(docx_source: Union[str, UploadFile]) -> Document:
+def load_clean_docx_memory(file_data: Union[UploadFile, bytes]) -> Document:
     """
-    Aceita todas as revisões de um arquivo .docx e retorna um Document limpo.
-    Pode receber caminho para arquivo local ou um UploadFile (FastAPI).
+    Accepts all tracked revisions in a .docx file and returns a cleaned python-docx Document object.
+    Works entirely in memory using BytesIO.
+
+    Parameters:
+    - file_data: either an UploadFile (e.g., from FastAPI) or raw bytes
+
+    Returns:
+    - Document: cleaned document with all revisions accepted
     """
-    if isinstance(docx_source, str):
-        return _accept_revisions_on_disk(docx_source)
-
-    elif isinstance(docx_source, UploadFile):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-            shutil.copyfileobj(docx_source.file, tmp)
-            tmp_path = tmp.name
-        doc = _accept_revisions_on_disk(tmp_path)
-        os.remove(tmp_path)
-        return doc
-
+    # Read raw file content
+    if isinstance(file_data, UploadFile):
+        file_bytes = file_data.file.read()
+    elif isinstance(file_data, bytes):
+        file_bytes = file_data
     else:
-        raise TypeError("docx_source deve ser um caminho de arquivo (str) ou UploadFile")
+        raise TypeError("file_data must be UploadFile or bytes")
+
+    # Input and output in-memory streams
+    in_memory_input = io.BytesIO(file_bytes)
+    in_memory_output = io.BytesIO()
+
+    with zipfile.ZipFile(in_memory_input, 'r') as zin:
+        with zipfile.ZipFile(in_memory_output, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+
+                # Check only relevant XML parts (document, headers, footers, footnotes, endnotes, comments)
+                if item.filename.startswith("word/") and (
+                    item.filename.endswith("document.xml") or
+                    item.filename.startswith("word/header") or
+                    item.filename.startswith("word/footer") or
+                    item.filename.endswith("footnotes.xml") or
+                    item.filename.endswith("endnotes.xml") or
+                    item.filename.endswith("comments.xml")
+                ):
+                    if _has_revisions(data):
+                        data = _clean_revisions(data)
+
+                # Write cleaned or original content to output zip
+                zout.writestr(item, data)
+
+    # Reset pointer and load as Document
+    in_memory_output.seek(0)
+    return Document(in_memory_output)
