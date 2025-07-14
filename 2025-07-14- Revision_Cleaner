@@ -1,4 +1,4 @@
-📄 docx_revision_cleaner.py
+📁 docx_revision_cleaner.py
 python
 Copier
 Modifier
@@ -8,6 +8,8 @@ import os
 import tempfile
 import xml.etree.ElementTree as ET
 from docx import Document
+from typing import Union
+from fastapi import UploadFile
 
 NAMESPACES = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 ET.register_namespace('w', NAMESPACES['w'])
@@ -45,11 +47,7 @@ def _clean_revisions(path):
     except ET.ParseError:
         pass
 
-def load_clean_docx(docx_path: str) -> Document:
-    """
-    Aceita todas as revisões de um arquivo .docx (corpo, headers, footers, footnotes, endnotes, comments)
-    e retorna um objeto python-docx Document pronto para uso.
-    """
+def _accept_revisions_on_disk(docx_path: str) -> Document:
     temp_dir = tempfile.mkdtemp()
     word_folder = os.path.join(temp_dir, "word")
 
@@ -88,13 +86,22 @@ def load_clean_docx(docx_path: str) -> Document:
 
     shutil.rmtree(temp_dir)
     return doc
-✅ Como usar no seu script:
-python
-Copier
-Modifier
-from docx_revision_cleaner import load_clean_docx
 
-doc = load_clean_docx("caminho/para/seuarquivo.docx")
+def load_clean_docx(docx_source: Union[str, UploadFile]) -> Document:
+    """
+    Aceita todas as revisões de um arquivo .docx e retorna um Document limpo.
+    Pode receber caminho para arquivo local ou um UploadFile (FastAPI).
+    """
+    if isinstance(docx_source, str):
+        return _accept_revisions_on_disk(docx_source)
 
-for para in doc.paragraphs:
-    print(para.text)
+    elif isinstance(docx_source, UploadFile):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            shutil.copyfileobj(docx_source.file, tmp)
+            tmp_path = tmp.name
+        doc = _accept_revisions_on_disk(tmp_path)
+        os.remove(tmp_path)
+        return doc
+
+    else:
+        raise TypeError("docx_source deve ser um caminho de arquivo (str) ou UploadFile")
