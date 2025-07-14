@@ -1,82 +1,54 @@
 import io
 import zipfile
-import xml.etree.ElementTree as ET
 from typing import Union
 from fastapi import UploadFile
 from docx import Document
+from lxml import etree
 
 NAMESPACES = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-ET.register_namespace('w', NAMESPACES['w'])
 
-def _has_revisions(xml: bytes) -> bool:
+def _clean_revisions_lxml(xml_bytes: bytes) -> bytes:
     """
-    Check if the given XML content contains tracked revisions (insertions or deletions).
+    Remove <w:del> and flatten <w:ins> tags using lxml for better namespace handling.
     """
-    try:
-        root = ET.fromstring(xml)
-        return root.find(".//w:ins", NAMESPACES) is not None or root.find(".//w:del", NAMESPACES) is not None
-    except ET.ParseError:
-        return False
+    parser = etree.XMLParser(ns_clean=True, recover=True)
+    root = etree.fromstring(xml_bytes, parser=parser)
 
-def _clean_revisions(xml: bytes) -> bytes:
-    """
-    Remove <w:del> and flatten <w:ins> tags, accepting all changes.
-    Returns cleaned XML as bytes.
-    """
-    try:
-        root = ET.fromstring(xml)
+    # Remove <w:del>
+    for del_el in root.xpath(".//w:del", namespaces=NAMESPACES):
+        del_el.getparent().remove(del_el)
 
-        # Remove <w:del> (deletions)
-        for del_tag in list(root.findall(".//w:del", NAMESPACES)):
-            parent = del_tag.getparent() if hasattr(del_tag, "getparent") else None
-            if parent is not None:
-                parent.remove(del_tag)
-            else:
-                root.remove(del_tag)
+    # Flatten <w:ins>
+    for ins_el in root.xpath(".//w:ins", namespaces=NAMESPACES):
+        parent = ins_el.getparent()
+        index = parent.index(ins_el)
+        for child in reversed(ins_el):
+            parent.insert(index, child)
+        parent.remove(ins_el)
 
-        # Flatten <w:ins> (keep inserted content)
-        for ins_tag in list(root.findall(".//w:ins", NAMESPACES)):
-            parent = ins_tag.getparent() if hasattr(ins_tag, "getparent") else None
-            children = list(ins_tag)
-            if parent is not None:
-                index = list(parent).index(ins_tag)
-                for child in reversed(children):
-                    parent.insert(index, child)
-                parent.remove(ins_tag)
-
-        return ET.tostring(root, encoding='utf-8', xml_declaration=True)
-    except ET.ParseError:
-        return xml
+    return etree.tostring(root, encoding='utf-8', xml_declaration=True)
 
 def load_clean_docx_memory(file_data: Union[UploadFile, bytes]) -> Document:
     """
     Accepts all tracked revisions in a .docx file and returns a cleaned python-docx Document object.
-    Works entirely in memory using BytesIO.
-
-    Parameters:
-    - file_data: either an UploadFile (e.g., from FastAPI) or raw bytes
-
-    Returns:
-    - Document: cleaned document with all revisions accepted
+    Works entirely in memory.
     """
-    # Read raw file content
     if isinstance(file_data, UploadFile):
+        file_data.file.seek(0)  # rewind the stream
         file_bytes = file_data.file.read()
     elif isinstance(file_data, bytes):
         file_bytes = file_data
     else:
         raise TypeError("file_data must be UploadFile or bytes")
 
-    # Input and output in-memory streams
-    in_memory_input = io.BytesIO(file_bytes)
-    in_memory_output = io.BytesIO()
+    in_buffer = io.BytesIO(file_bytes)
+    out_buffer = io.BytesIO()
 
-    with zipfile.ZipFile(in_memory_input, 'r') as zin:
-        with zipfile.ZipFile(in_memory_output, 'w', zipfile.ZIP_DEFLATED) as zout:
+    with zipfile.ZipFile(in_buffer, 'r') as zin:
+        with zipfile.ZipFile(out_buffer, 'w', zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
                 data = zin.read(item.filename)
 
-                # Check only relevant XML parts (document, headers, footers, footnotes, endnotes, comments)
                 if item.filename.startswith("word/") and (
                     item.filename.endswith("document.xml") or
                     item.filename.startswith("word/header") or
@@ -85,12 +57,12 @@ def load_clean_docx_memory(file_data: Union[UploadFile, bytes]) -> Document:
                     item.filename.endswith("endnotes.xml") or
                     item.filename.endswith("comments.xml")
                 ):
-                    if _has_revisions(data):
-                        data = _clean_revisions(data)
+                    try:
+                        data = _clean_revisions_lxml(data)
+                    except Exception:
+                        pass  # keep original data if any error
 
-                # Write cleaned or original content to output zip
                 zout.writestr(item, data)
 
-    # Reset pointer and load as Document
-    in_memory_output.seek(0)
-    return Document(in_memory_output)
+    out_buffer.seek(0)
+    return Document(out_buffer)
