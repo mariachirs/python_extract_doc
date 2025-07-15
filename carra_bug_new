@@ -1,0 +1,68 @@
+from docx.text.paragraph import Paragraph
+import unicodedata
+
+def normalize(text):
+    text = unicodedata.normalize('NFD', text)
+    text = text.encode('ascii', 'ignore').decode("utf-8")
+    return text.lower().strip()
+
+def extract_precise_project_description(doc, mandate_no):
+    tables = list(doc.tables)
+    target_idx = None
+    # Find the correct mandate table
+    for t_idx, table in enumerate(tables):
+        if len(table.rows) > 0 and len(table.rows[0].cells) > 1:
+            cell0 = normalize(table.rows[0].cells[0].text)
+            cell1 = normalize(table.rows[0].cells[1].text)
+            if "mandat no" in cell0 and normalize(str(mandate_no)) == cell1:
+                target_idx = t_idx
+                break
+    if target_idx is None:
+        return None
+
+    # Get document elements in order
+    blocks = []
+    for block in doc.element.body:
+        if block.tag.endswith('tbl'):
+            blocks.append(('table', block))
+        elif block.tag.endswith('p'):
+            blocks.append(('paragraph', block))
+
+    from docx.text.paragraph import Paragraph
+
+    table_counter = -1
+    after_table = False
+    description_paragraphs = []
+
+    STOP_MARKERS = [
+        "a effectue les taches suivantes",
+        "a effectué les tâches suivantes",
+        "taches realisees",
+        "tâches réalisées",
+        "principales realisations",
+        "principales réalisations",
+        "architecture et analyse fonctionnelle",  # you may add any additional markers
+        "m. bernier a effectué les tâches suivantes"
+    ]
+
+    def contains_marker(text):
+        norm = normalize(text)
+        return any(marker in norm for marker in STOP_MARKERS)
+
+    for block_type, block in blocks:
+        if block_type == 'table':
+            table_counter += 1
+            if table_counter == target_idx:
+                after_table = True
+        elif after_table and block_type == 'paragraph':
+            para = Paragraph(block, doc)
+            full_text = ''.join([run.text for run in para.runs]).strip()
+            if not full_text:
+                continue
+            if contains_marker(full_text):
+                break  # Stop BEFORE the marker paragraph
+            description_paragraphs.append(full_text)
+        elif not after_table:
+            continue
+
+    return "\n\n".join(description_paragraphs) if description_paragraphs else None
