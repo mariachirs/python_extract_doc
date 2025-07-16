@@ -1,0 +1,99 @@
+import regex as re
+from docx.text.paragraph import Paragraph
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+
+def full_cell_text(cell):
+    texts = []
+    for paragraph in cell.paragraphs:
+        texts.append(''.join(run.text for run in paragraph.runs))
+    return ' '.join(texts).strip()
+
+def normalize(s: str) -> str:
+    return re.sub(r'\s+', ' ', s.replace('\xa0', ' ')).strip().lower()
+
+def extract_tasks_by_proj_fonc_true_final(doc, mandatNo):
+    detail_idxs = [
+        idx for idx, tbl in enumerate(doc.tables)
+        if normalize(full_cell_text(tbl.rows[0].cells[0])).startswith("mandat no")
+    ]
+    if not detail_idxs:
+        raise ValueError("No 'Mandat no' tables found in the document.")
+
+    chosen = None
+    for idx in detail_idxs:
+        tbl = doc.tables[idx]
+        mandatNoLocated = full_cell_text(tbl.rows[0].cells[1])
+        projet = full_cell_text(tbl.rows[1].cells[1])
+        fonction = full_cell_text(tbl.rows[3].cells[1])
+        if (mandatNo == mandatNoLocated):
+            chosen = idx
+            break
+    if chosen is None:
+        raise ValueError("index not found.")
+
+    tbl_idx = chosen
+    body_children = list(doc.element.body.iterchildren())
+    xml_idx = next(
+        i for i, ch in enumerate(body_children)
+        if isinstance(ch, CT_Tbl) and doc.tables[tbl_idx]._tbl is ch
+    )
+
+    start = None
+    for i in range(xml_idx + 1, len(body_children)):
+        ch = body_children[i]
+        if isinstance(ch, CT_P):
+            txt = normalize(Paragraph(ch, doc).text)
+            if "a effectué les tâches suivantes" in txt:
+                start = i + 1
+                break
+    if start is None:
+        raise ValueError("Could not locate the 'a effectué les tâches suivantes' paragraph.")
+
+    tasks = []
+    for j in range(start, len(body_children)):
+        ch = body_children[j]
+        if isinstance(ch, CT_Tbl):
+            break
+        if isinstance(ch, CT_P):
+            line = Paragraph(ch, doc).text.strip()
+            if not line:
+                continue
+            if normalize(line).startswith("les livrables suivants ont été réalisés"):
+                break
+            tasks.append(line)
+
+    # --- Robust grouping: category is any line with no . or ; at end
+    grouped = []
+    i = 0
+    while i < len(tasks):
+        # Category line
+        if not (tasks[i].endswith('.') or tasks[i].endswith(';')):
+            current_cat = tasks[i]
+            group = {"categorie": current_cat, "tasks": []}
+            i += 1
+            # All following lines (punctuated or not), until the next category or end
+            while i < len(tasks) and (tasks[i].endswith('.') or tasks[i].endswith(';') or 
+                                      (tasks[i].endswith('.') == False and tasks[i].endswith(';') == False and 
+                                       (i == len(tasks)-1 or (tasks[i+1].endswith('.') or tasks[i+1].endswith(';'))))):
+                # Only treat as new category if the next line is a clear category
+                group["tasks"].append(tasks[i])
+                i += 1
+            grouped.append(group)
+        else:
+            i += 1
+
+    # --- Preserve your requested output rule ---
+    if grouped == [] and len(tasks) > 0:
+        data = {
+            "projet": projet,
+            "fonction": fonction,
+            "tasks": tasks
+        }
+    else:
+        data = {
+            "projet": projet,
+            "fonction": fonction,
+            "tasks_by_category": grouped
+        }
+    return data
