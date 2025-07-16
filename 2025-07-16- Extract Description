@@ -1,0 +1,87 @@
+from docx import Document
+from docx.text.paragraph import Paragraph
+import unicodedata
+import re
+
+def extract_project_description_paranoid_merge(doc, mandate_no):
+    """
+    Extracts all paragraphs after the 'Mandat no :' table and stops BEFORE any marker
+    like 'a effectué les tâches suivantes'. If the first paragraph ends with 'à',
+    it merges it with the second paragraph.
+    Returns the full project description as a single string.
+    """
+
+    def paranoid_normalize(text):
+        text = unicodedata.normalize('NFKD', text)
+        text = ''.join([c for c in text if not unicodedata.combining(c)])
+        text = text.lower()
+        text = re.sub(r'\s+', ' ', text)
+        text = text.replace('\xa0', ' ')
+        return text.strip()
+
+    STOP_MARKERS = [
+        "a effectue les taches suivantes",
+        "a effectué les tâches suivantes",
+        "taches realisees",
+        "tâches réalisées",
+        "principales realisations",
+        "principales réalisations",
+        "m. bernier a effectué les tâches suivantes"
+    ]
+    NORM_STOP_MARKERS = [paranoid_normalize(m) for m in STOP_MARKERS]
+
+    # Find the correct mandate table
+    tables = list(doc.tables)
+    target_idx = None
+    for t_idx, table in enumerate(tables):
+        if len(table.rows) > 0 and len(table.rows[0].cells) > 1:
+            cell0 = paranoid_normalize(table.rows[0].cells[0].text)
+            cell1 = paranoid_normalize(table.rows[0].cells[1].text)
+            if "mandat no" in cell0 and paranoid_normalize(str(mandate_no)) == cell1:
+                target_idx = t_idx
+                break
+    if target_idx is None:
+        return None
+
+    # Get document blocks in order
+    blocks = []
+    for block in doc.element.body:
+        if block.tag.endswith('tbl'):
+            blocks.append(('table', block))
+        elif block.tag.endswith('p'):
+            blocks.append(('paragraph', block))
+
+    table_counter = -1
+    after_table = False
+    description_paragraphs = []
+
+    for block_type, block in blocks:
+        if block_type == 'table':
+            table_counter += 1
+            if table_counter == target_idx:
+                after_table = True
+        elif after_table and block_type == 'paragraph':
+            para = Paragraph(block, doc)
+            full_text = ''.join([run.text for run in para.runs]).strip()
+            if not full_text:
+                continue
+            norm_full_text = paranoid_normalize(full_text)
+            if any(marker in norm_full_text for marker in NORM_STOP_MARKERS):
+                break
+            description_paragraphs.append(full_text)
+        elif not after_table:
+            continue
+
+    # Merge first and second paragraph if the first ends with "à"
+    if description_paragraphs and len(description_paragraphs) > 1:
+        if description_paragraphs[0].strip().endswith('à'):
+            merged = description_paragraphs[0].strip() + ' ' + description_paragraphs[1].lstrip()
+            description_paragraphs = [merged] + description_paragraphs[2:]
+
+    return '\n\n'.join(description_paragraphs) if description_paragraphs else None
+
+# Example usage:
+if __name__ == "__main__":
+    doc = Document("Bernier_Sylvain_CV_25-07_Carra_Bug.docx")
+    desc = extract_project_description_paranoid_merge(doc, 9)
+    print(desc)
