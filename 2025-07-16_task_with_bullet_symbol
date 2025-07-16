@@ -1,0 +1,74 @@
+from docx.text.paragraph import Paragraph
+import re
+
+def normalize_noaccent(text):
+    text = text.lower()
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+def extract_tasks_with_categories(doc, mandate_no):
+    """
+    Extracts the task categories and sub-tasks for a given mandate number,
+    using an already loaded docx.Document object.
+    Returns a dict: {category: [sub-tasks]}
+    """
+    # Find the correct mandate table index
+    tables = list(doc.tables)
+    target_idx = None
+    for t_idx, table in enumerate(tables):
+        if len(table.rows) > 0 and len(table.rows[0].cells) > 1:
+            cell0 = normalize_noaccent(table.rows[0].cells[0].text)
+            cell1 = normalize_noaccent(table.rows[0].cells[1].text)
+            if "mandat no" in cell0 and normalize_noaccent(str(mandate_no)) == cell1:
+                target_idx = t_idx
+                break
+    if target_idx is None:
+        return None
+
+    # Gather all docx body elements in order
+    blocks = []
+    for block in doc.element.body:
+        if block.tag.endswith('tbl'):
+            blocks.append(('table', block))
+        elif block.tag.endswith('p'):
+            blocks.append(('paragraph', block))
+
+    table_counter = -1
+    after_table = False
+    found_marker = False
+    categories = {}
+    current_cat = None
+
+    for block_type, block in blocks:
+        if block_type == 'table':
+            table_counter += 1
+            if table_counter == target_idx:
+                after_table = True
+        elif after_table and block_type == 'paragraph':
+            para = Paragraph(block, doc)
+            para_text = para.text.strip()
+            if not para_text:
+                continue
+            if not found_marker:
+                # Detect start of task list
+                if re.search(r'(a effectué les tâches suivantes|tâches réalisées|principales réalisations)', para_text, re.I):
+                    found_marker = True
+                continue
+            # Main category starts with • (main bullet)
+            if para_text.startswith('•'):
+                current_cat = para_text.lstrip('•').strip()
+                categories[current_cat] = []
+            # Sub-task lines start with ▪ or  or are after category
+            elif para_text.startswith('▪') or para_text.startswith('') or (current_cat and para_text):
+                if current_cat:
+                    categories[current_cat].append(para_text.lstrip('▪').strip())
+        elif not after_table:
+            continue
+
+    return categories
+
+# Usage example:
+# from docx import Document
+# doc = Document("your_docx_here.docx")
+# tasks = extract_tasks_with_categories(doc, 16)
+# print(tasks)
