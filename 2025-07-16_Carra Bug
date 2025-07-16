@@ -1,0 +1,84 @@
+from docx.text.paragraph import Paragraph
+import re
+
+def normalize_noaccent(text):
+    text = text.lower()
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+def extract_corrected_description_patched(doc, mandate_no):
+    STOP_MARKERS = [
+        "a effectue les taches suivantes",
+        "a effectué les tâches suivantes",
+        "taches realisees",
+        "tâches réalisées",
+        "principales realisations",
+        "principales réalisations",
+        "m. bernier a effectué les tâches suivantes"
+    ]
+    NORM_STOP_MARKERS = [normalize_noaccent(m) for m in STOP_MARKERS]
+
+    tables = list(doc.tables)
+    target_idx = None
+    for t_idx, table in enumerate(tables):
+        if len(table.rows) > 0 and len(table.rows[0].cells) > 1:
+            cell0 = normalize_noaccent(table.rows[0].cells[0].text)
+            cell1 = normalize_noaccent(table.rows[0].cells[1].text)
+            if "mandat no" in cell0 and normalize_noaccent(str(mandate_no)) == cell1:
+                target_idx = t_idx
+                break
+    if target_idx is None:
+        return None
+
+    blocks = []
+    for block in doc.element.body:
+        if block.tag.endswith('tbl'):
+            blocks.append(('table', block))
+        elif block.tag.endswith('p'):
+            blocks.append(('paragraph', block))
+
+    table_counter = -1
+    after_table = False
+    raw_pieces = []
+
+    for block_type, block in blocks:
+        if block_type == 'table':
+            table_counter += 1
+            if table_counter == target_idx:
+                after_table = True
+        elif after_table and block_type == 'paragraph':
+            para = Paragraph(block, doc)
+            para_text = para.text
+            if not para_text or not para_text.strip():
+                continue
+            norm_para = normalize_noaccent(para_text)
+            if any(marker in norm_para for marker in NORM_STOP_MARKERS):
+                break
+            raw_pieces.append(para_text.strip())
+        elif not after_table:
+            continue
+
+    if not raw_pieces:
+        return None
+
+    merged = []
+    i = 0
+    while i < len(raw_pieces):
+        current = raw_pieces[i]
+        if (current.endswith('à') and i+1 < len(raw_pieces) and raw_pieces[i+1].startswith('La solution')):
+            # Patch: insert "la CARRA." and new line before next
+            merged.append(current + ' la CARRA.')
+            merged.append(raw_pieces[i+1])
+            i += 2
+        else:
+            merged.append(current)
+            i += 1
+
+    return '\n\n'.join(merged)
+
+# Example usage:
+if __name__ == "__main__":
+    from docx import Document
+    doc = Document("Bernier_Sylvain_CV_25-07_Carra_Bug.docx")
+    desc = extract_corrected_description_patched(doc, 9)
+    print(desc)
