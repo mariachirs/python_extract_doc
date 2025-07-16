@@ -1,0 +1,113 @@
+import re
+from docx.text.paragraph import Paragraph
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+
+def full_cell_text(cell):
+    """
+    Concatenate all text across all paragraphs and runs in a cell.
+    """
+    texts = []
+    for paragraph in cell.paragraphs:
+        texts.append(''.join(run.text for run in paragraph.runs))
+    return ' '.join(texts).strip()
+
+def normalize(s: str) -> str:
+    """
+    Lowercase, replace non-breaking spaces with regular spaces, and collapse whitespace.
+    """
+    return re.sub(r'\s+', ' ', s.replace('\xa0', ' ')).strip().lower()
+
+def extract_tasks_by_proj_fonc(doc, mandatNo):
+    """
+    Extract tasks grouped by category for a given projet and fonction.
+    Returns a dict with keys:
+      - 'projet': project name
+      - 'fonction': role name
+      - 'tasks_by_category': list of dicts { 'categorie': category_name, 'tasks': [...] }
+    """
+    # 1. Identify "Mandat no" tables dynamically
+    detail_idxs = [
+        idx for idx, tbl in enumerate(doc.tables)
+        if normalize(full_cell_text(tbl.rows[0].cells[0])).startswith("mandat no")
+    ]
+    if not detail_idxs:
+        raise ValueError("No 'Mandat no' tables found in the document.")
+
+    # 2. Select the table matching our filters
+    chosen = None
+    for idx in detail_idxs:
+        tbl = doc.tables[idx]
+        mandatNoLocated = full_cell_text(tbl.rows[0].cells[1])
+        projet = full_cell_text(tbl.rows[1].cells[1])
+        fonction = full_cell_text(tbl.rows[3].cells[1])
+        if (mandatNo == mandatNoLocated):
+            chosen = idx
+            break
+    if chosen is None:
+        raise ValueError("index not found.")
+
+    tbl_idx = chosen
+
+    # 3. Locate the XML index of this table in the document body
+    body_children = list(doc.element.body.iterchildren())
+    xml_idx = next(
+        i for i, ch in enumerate(body_children)
+        if isinstance(ch, CT_Tbl) and doc.tables[tbl_idx]._tbl is ch
+    )
+
+    # 4. Find the paragraph that starts the task list
+    start = None
+    for i in range(xml_idx + 1, len(body_children)):
+        ch = body_children[i]
+        if isinstance(ch, CT_P):
+            txt = normalize(Paragraph(ch, doc).text)
+            if "a effectué les tâches suivantes" in txt:
+                start = i + 1
+                break
+    if start is None:
+        raise ValueError("Could not locate the 'a effectué les tâches suivantes' paragraph.")
+
+    # 5. Collect lines until the next table or the 'livrables' section
+    tasks = []
+    for j in range(start, len(body_children)):
+        ch = body_children[j]
+        if isinstance(ch, CT_Tbl):
+            break
+        if isinstance(ch, CT_P):
+            line = Paragraph(ch, doc).text.strip()
+            if not line:
+                continue
+            if normalize(line).startswith("les livrables suivants ont été réalisés"):
+                break
+            tasks.append(line)
+
+    # 6. Group tasks under their categories (CORRECTED)
+    grouped = []
+    current_cat = None
+
+    for line in tasks:
+        # --- Correction START: allow tasks with or without punctuation at the end
+        # If this line is a new category (no punctuation and not blank), or we have no category yet
+        if not re.search(r'[;.:]\s*$', line) and (current_cat is None or len(grouped) == 0 or len(grouped[-1]["tasks"]) > 0):
+            current_cat = line
+            grouped.append({"categorie": current_cat, "tasks": []})
+        elif current_cat:
+            grouped[-1]["tasks"].append(line.strip())
+        # --- Correction END
+
+    if grouped == [] and current_cat is None and len(tasks) > 0:
+        # Only Tasks
+        data = {
+            "projet": projet,
+            "fonction": fonction,
+            "tasks": tasks
+        }
+    else:
+        # Tasks Grouped By Category
+        data = {
+            "projet": projet,
+            "fonction": fonction,
+            "tasks_by_category": grouped
+        }
+    return data
