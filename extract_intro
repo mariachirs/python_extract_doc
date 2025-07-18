@@ -1,0 +1,32 @@
+def extract_intro_no_header_footer_dynamic(doc_path):
+    """
+    Extracts introduction from the document body,
+    dynamically skipping any line present in any header/footer.
+    Stops at first heading/title style.
+    """
+    doc = Document(doc_path)
+    
+    # Dynamically gather all lines in headers/footers (across all sections)
+    unwanted_lines = set()
+    for section in doc.sections:
+        for hf in [section.header, section.footer]:
+            for para in hf.paragraphs:
+                line = para.text.strip()
+                if line:
+                    unwanted_lines.add(line.lower())
+    
+    intro = []
+    for para in doc.paragraphs:
+        txt = para.text.strip()
+        if not txt:
+            continue
+        if txt.lower() in unwanted_lines:
+            continue
+        # Stop at heading/title styles
+        if para.style.name.lower().startswith('heading') or 'title' in para.style.name.lower():
+            break
+        intro.append(txt)
+        if len(intro) > 20:
+            break
+
+    return "\n\n".join(intro)
