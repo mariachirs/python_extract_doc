@@ -1,0 +1,75 @@
+from docx import Document
+
+def extract_full_project_description_after_table(docx_path, mandate_no, triggers=None):
+    """
+    Extracts the full project description for a given mandate number from a .docx file.
+    The extraction:
+    - Starts after the table that contains "Mandat no" and the specified number.
+    - Joins all consecutive non-empty paragraphs until a trigger phrase is found.
+    Args:
+        docx_path (str): Path to the .docx file.
+        mandate_no (str or int): The mandate number to extract the description for.
+        triggers (list, optional): List of trigger phrases that signal the end of the description.
+    Returns:
+        str or None: The full project description, or None if not found.
+    """
+    if triggers is None:
+        triggers = [
+            "effectue les tâches suivantes",
+            "fait les tâches suivantes",
+            "livre les tâches suivantes",
+            "M. Martins a effectué les tâches suivantes",
+        ]
+    doc = Document(docx_path)
+    mandate_no = str(mandate_no).strip()
+    # Step 1: Find the table index for the target mandate
+    table_idx = None
+    for i, table in enumerate(doc.tables):
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            for j, text in enumerate(cells):
+                if "mandat no" in text.lower() and (
+                    (j + 1 < len(cells) and mandate_no == cells[j + 1].strip()) or mandate_no in text
+                ):
+                    table_idx = i
+                    break
+            if table_idx is not None:
+                break
+        if table_idx is not None:
+            break
+    if table_idx is None:
+        return None  # Mandate not found
+
+    # Step 2: Get the last paragraph index of this table
+    table_element = doc.tables[table_idx]._element
+    body = doc._body._element
+    idx = list(body).index(table_element)
+    paragraphs = doc.paragraphs
+
+    # Find the first paragraph after the table
+    next_para_idx = 0
+    for i, para in enumerate(paragraphs):
+        if (
+            para._element.getparent() is not None
+            and para._element.getparent() is body
+            and list(body).index(para._element) > idx
+        ):
+            next_para_idx = i
+            break
+
+    # Step 3: Collect all non-empty paragraphs until a trigger is found
+    description_lines = []
+    for i in range(next_para_idx, len(paragraphs)):
+        ptext = paragraphs[i].strip()
+        if not ptext:
+            continue
+        if any(trigger in ptext.lower() for trigger in triggers):
+            break
+        description_lines.append(ptext)
+    return " ".join(description_lines) if description_lines else None
+
+# Example usage:
+desc = extract_full_project_description_after_table(
+    "/mnt/data/MARTINS_Roni_CV_24-04-22.docx", 16
+)
+print(desc)
