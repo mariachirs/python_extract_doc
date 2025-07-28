@@ -1,0 +1,36 @@
+def apply_puce1_between_limits(doc: Document):
+    body_elements = list(doc.element.body.iterchildren())
+
+    start_idx, end_idx = None, None
+
+    for idx, el in enumerate(body_elements):
+        if isinstance(el, CT_P):
+            text = Paragraph(el, doc).text.strip().lower()
+            if start_idx is None and "effectue les tâches suivantes" in normalize(text):
+                start_idx = idx + 1
+            elif "technologies utilisées dans le cadre du mandat" in normalize(text):
+                end_idx = idx
+                break
+
+    if start_idx is None or end_idx is None:
+        print("❌ Limites não encontradas no documento.")
+        return
+
+    print(f"📌 Aplicando estilo entre índices {start_idx} e {end_idx}")
+
+    for i in range(start_idx, end_idx):
+        el = body_elements[i]
+        if isinstance(el, CT_P):
+            paragraph = Paragraph(el, doc)
+            text = paragraph.text.strip()
+            if not text:
+                continue
+
+            # Heurística: se não terminar com dois-pontos ou for suficientemente indentado, é tarefa
+            if not text.endswith(":"):
+                paragraph.style = doc.styles["Puce 1"]
+                print(f"✅ Estilo aplicado a: {text}")
+            else:
+                print(f"🔶 Categoria detectada (ignorada): {text}")
+
+    return doc
