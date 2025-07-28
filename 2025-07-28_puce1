@@ -1,0 +1,71 @@
+import zipfile
+import xml.etree.ElementTree as ET
+from io import BytesIO
+from docx import Document
+
+PUCE_1_STYLE_XML = '''
+<w:style w:type="paragraph" w:styleId="ListBullet" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:name w:val="Puce 1"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="Normal"/>
+  <w:uiPriority w:val="34"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:numPr>
+      <w:ilvl w:val="0"/>
+      <w:numId w:val="1"/>
+    </w:numPr>
+  </w:pPr>
+</w:style>
+'''
+
+def apply_puce1_style_in_memory(doc_obj):
+    # Save original Document to in-memory stream
+    docx_stream = BytesIO()
+    doc_obj.save(docx_stream)
+    docx_stream.seek(0)
+
+    # Read the .docx (ZIP structure)
+    in_mem_zip = zipfile.ZipFile(docx_stream, 'r')
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as out_zip:
+        style_updated = False
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        desired_element = ET.fromstring(PUCE_1_STYLE_XML)
+        desired_str = ET.tostring(desired_element, encoding='unicode').strip()
+
+        for item in in_mem_zip.infolist():
+            data = in_mem_zip.read(item.filename)
+
+            if item.filename == 'word/styles.xml':
+                root = ET.fromstring(data)
+                found = False
+
+                for style in root.findall('w:style', ns):
+                    name = style.find('w:name', ns)
+                    if name is not None and name.attrib.get(f'{{{ns["w"]}}}val') == "Puce 1":
+                        found = True
+                        current_str = ET.tostring(style, encoding='unicode').strip()
+                        if current_str != desired_str:
+                            print("🔁 Updating 'Puce 1' style.")
+                            root.remove(style)
+                            root.append(desired_element)
+                            style_updated = True
+                        else:
+                            print("✅ 'Puce 1' style already correct.")
+                        break
+
+                if not found:
+                    print("➕ 'Puce 1' style missing. Adding it.")
+                    root.append(desired_element)
+                    style_updated = True
+
+                # Write modified styles.xml back into archive
+                new_data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+                out_zip.writestr(item, new_data)
+            else:
+                out_zip.writestr(item, data)
+
+    # Return new Document from updated archive
+    zip_buffer.seek(0)
+    return Document(zip_buffer)
