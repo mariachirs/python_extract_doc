@@ -1,0 +1,147 @@
+import os
+import zipfile
+import shutil
+import tempfile
+from lxml import etree
+from docx import Document
+
+# XML namespaces used by WordprocessingML
+NAMESPACES = {
+    'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+}
+
+
+def _print_diagnostics(xml, filename):
+    """
+    Print the number of tracked elements and comments found in a given XML part.
+    """
+    def count(tag):
+        return len(xml.xpath(f'//w:{tag}', namespaces=NAMESPACES))
+
+    print(f"📄 {filename}")
+    print(f"  🗨️ Comments:               {count('commentReference')}")
+    print(f"  ➕ Insertions:             {count('ins')}")
+    print(f"  ➖ Deletions:              {count('del')}")
+    print(f"  🔁 Moves:                  {count('moveFrom') + count('moveTo')}")
+    print(f"  🎨 Formatting revisions:   {count('rPrChange') + count('pPrChange') + count('tblPrChange')}")
+    print("")
+
+
+def _clean_xml_part(xml_data: bytes, diagnostics=False, filename='(unknown)') -> bytes:
+    """
+    Clean a WordprocessingML XML part by:
+    - Accepting all tracked changes
+    - Removing all comments and references
+    - Removing formatting revisions and editing marks
+    """
+    xml = etree.fromstring(xml_data)
+
+    if diagnostics:
+        _print_diagnostics(xml, filename)
+
+    # Accept insertions: keep inner content
+    for ins in xml.xpath('//w:ins', namespaces=NAMESPACES):
+        parent = ins.getparent()
+        index = parent.index(ins)
+        for child in list(ins):
+            parent.insert(index, child)
+            index += 1
+        parent.remove(ins)
+
+    # Remove deletions: remove the deleted content
+    for deletion in xml.xpath('//w:del', namespaces=NAMESPACES):
+        deletion.getparent().remove(deletion)
+
+    # Remove moveFrom and moveTo tags
+    for tag in ['moveFrom', 'moveTo']:
+        for elem in xml.xpath(f'//w:{tag}', namespaces=NAMESPACES):
+            elem.getparent().remove(elem)
+
+    # Remove comment tags
+    for tag in ['commentRangeStart', 'commentRangeEnd', 'commentReference']:
+        for elem in xml.xpath(f'//w:{tag}', namespaces=NAMESPACES):
+            elem.getparent().remove(elem)
+
+    # Remove formatting revisions and other editing marks
+    for tag in ['rPrChange', 'pPrChange', 'tblPrChange', 'proofErr',
+                'permStart', 'permEnd', 'bookmarkStart', 'bookmarkEnd', 'trackChanges']:
+        for elem in xml.xpath(f'//w:{tag}', namespaces=NAMESPACES):
+            elem.getparent().remove(elem)
+
+    return etree.tostring(xml, encoding='UTF-8', xml_declaration=True, standalone="yes")
+
+
+def clean_docx(filepath_in: str, filepath_out: str = None, diagnostics=False) -> Document:
+    """
+    Fully clean a .docx file by:
+    - Accepting all tracked changes (insertions, deletions, moves)
+    - Removing all comment content and references
+    - Removing formatting revisions and other tracked metadata
+    - Supports headers and footers dynamically
+    - Returns a cleaned python-docx.Document object
+
+    Parameters:
+        filepath_in (str): Path to the input .docx file.
+        filepath_out (str): Optional output path. If None, input is overwritten.
+        diagnostics (bool): If True, prints details of what was found/cleaned.
+
+    Returns:
+        Document: A python-docx Document object of the cleaned file.
+    """
+    temp_dir = tempfile.mkdtemp()
+    temp_docx = os.path.join(temp_dir, 'cleaned.docx')
+    shutil.copy2(filepath_in, temp_docx)
+
+    # Collect editable parts dynamically (document + headers + footers + comments)
+    with zipfile.ZipFile(temp_docx, 'r') as zin:
+        all_files = [item.filename for item in zin.infolist()]
+        editable_parts = [
+            f for f in all_files
+            if f.startswith("word/") and (
+                f == 'word/document.xml' or
+                f.startswith('word/header') or
+                f.startswith('word/footer') or
+                f == 'word/comments.xml'
+            )
+        ]
+
+    # Clean the document by rewriting parts
+    with zipfile.ZipFile(temp_docx, 'r') as zin:
+        with zipfile.ZipFile(temp_docx + ".mod", 'w') as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+
+                if item.filename in editable_parts:
+                    if item.filename == 'word/comments.xml':
+                        data = b''  # Clear comments completely
+                    else:
+                        try:
+                            data = _clean_xml_part(data, diagnostics=diagnostics, filename=item.filename)
+                        except Exception as e:
+                            print(f"[ERROR] Failed to process {item.filename}: {e}")
+
+                zout.writestr(item, data)
+
+    # Replace the original with cleaned version
+    os.remove(temp_docx)
+    os.rename(temp_docx + ".mod", temp_docx)
+
+    if filepath_out:
+        shutil.copy2(temp_docx, filepath_out)
+
+    # Load and return as python-docx.Document
+    doc = Document(temp_docx)
+    shutil.rmtree(temp_dir)
+    return doc
+
+
+=======================
+How to use
+          from docx_cleaner import clean_docx
+
+# Clean and inspect what was removed
+doc = clean_docx("input.docx", "output.docx", diagnostics=True)
+
+# Continue editing with python-docx
+for para in doc.paragraphs:
+    print(para.text)
