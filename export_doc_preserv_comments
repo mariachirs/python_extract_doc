@@ -1,0 +1,56 @@
+import io
+import zipfile
+from typing import Dict, Optional
+from docxtpl import DocxTemplate
+
+
+def render_docx_preserve_comments(
+    template_bytes: bytes,
+    context: Dict,
+) -> bytes:
+    """
+    Render a DOCX template in memory while preserving all comments
+    from the original template, including comments in headers, footers,
+    and the main document body.
+
+    Args:
+        template_bytes: Byte content of the .docx template containing comments.
+        context: Dictionary of context variables for Jinja2 rendering.
+
+    Returns:
+        Byte content of the rendered .docx with original comments intact.
+    """
+    # Render the template to a temporary in-memory stream
+    temp_stream = io.BytesIO()
+    doc = DocxTemplate(io.BytesIO(template_bytes))
+    doc.render(context)
+    doc.save(temp_stream)
+
+    # Extract comment files from the original template
+    original_comments: Optional[bytes] = None
+    original_comments_rels: Optional[bytes] = None
+
+    with zipfile.ZipFile(io.BytesIO(template_bytes), 'r') as orig_zip:
+        try:
+            original_comments = orig_zip.read('word/comments.xml')
+        except KeyError:
+            pass
+        try:
+            original_comments_rels = orig_zip.read('word/_rels/comments.xml.rels')
+        except KeyError:
+            pass
+
+    # Merge original comments into the rendered document
+    result_stream = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(temp_stream.getvalue()), 'r') as temp_zip,
+         zipfile.ZipFile(result_stream, 'w') as result_zip:
+        for entry in temp_zip.infolist():
+            data = temp_zip.read(entry.filename)
+            if entry.filename == 'word/comments.xml' and original_comments:
+                result_zip.writestr(entry, original_comments)
+            elif entry.filename == 'word/_rels/comments.xml.rels' and original_comments_rels:
+                result_zip.writestr(entry, original_comments_rels)
+            else:
+                result_zip.writestr(entry, data)
+
+    return result_stream.getvalue()
