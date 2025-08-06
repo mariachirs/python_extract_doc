@@ -1,0 +1,92 @@
+from typing import Union
+import io
+import zipfile
+from lxml import etree
+from docx import Document
+
+try:
+    from fastapi import UploadFile
+except ImportError:
+    UploadFile = None
+
+NAMESPACES = {
+    'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+}
+
+def clean_docx_from_bytes(file_data: Union['UploadFile', bytes], diagnostics: bool = False) -> Document:
+    def get_bytes(data):
+        if hasattr(data, "file"):
+            return data.file.read()
+        elif isinstance(data, bytes):
+            return data
+        raise TypeError("Expected UploadFile or bytes")
+
+    def clean_xml(xml_data: bytes, filename: str) -> bytes:
+        xml = etree.fromstring(xml_data)
+
+        if diagnostics:
+            def count(tag): return len(xml.xpath(f'//w:{tag}', namespaces=NAMESPACES))
+            print(f"📄 {filename}")
+            print(f"  🗨️ Comments:               {count('commentReference')}")
+            print(f"  ➕ Insertions:             {count('ins')}")
+            print(f"  ➖ Deletions:              {count('del')}")
+            print(f"  🔁 Moves:                  {count('moveFrom') + count('moveTo')}")
+            print(f"  🎨 Formatting revisions:   {count('rPrChange') + count('pPrChange') + count('tblPrChange')}")
+            print()
+
+        # Accept insertions
+        for ins in xml.xpath('//w:ins', namespaces=NAMESPACES):
+            parent = ins.getparent()
+            index = parent.index(ins)
+            for child in list(ins):
+                parent.insert(index, child)
+                index += 1
+            parent.remove(ins)
+
+        # Tags to fully remove
+        tags_to_remove = [
+            'del', 'moveFrom', 'moveTo',
+            'commentRangeStart', 'commentRangeEnd', 'commentReference',
+            'rPrChange', 'pPrChange', 'tblPrChange',
+            'proofErr', 'permStart', 'permEnd',
+            'bookmarkStart', 'bookmarkEnd', 'trackChanges',
+        ]
+        for tag in tags_to_remove:
+            for elem in xml.xpath(f'//w:{tag}', namespaces=NAMESPACES):
+                elem.getparent().remove(elem)
+
+        # Remove rsid* attributes
+        for elem in xml.iter():
+            for attr in list(elem.attrib):
+                if 'rsid' in attr:
+                    del elem.attrib[attr]
+
+        return etree.tostring(xml, encoding='UTF-8', xml_declaration=True, standalone="yes")
+
+    raw_bytes = get_bytes(file_data)
+    input_buffer = io.BytesIO(raw_bytes)
+    output_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(input_buffer, 'r') as zin:
+        editable_parts = [
+            item.filename for item in zin.infolist()
+            if item.filename.startswith("word/") and item.filename.endswith(".xml")
+        ]
+
+        with zipfile.ZipFile(output_buffer, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+
+                if item.filename in editable_parts:
+                    if item.filename == 'word/comments.xml':
+                        data = b''  # strip comments entirely
+                    else:
+                        try:
+                            data = clean_xml(data, item.filename)
+                        except Exception as e:
+                            print(f"[ERROR] Failed to clean {item.filename}: {e}")
+
+                zout.writestr(item, data)
+
+    output_buffer.seek(0)
+    return Document(output_buffer)
