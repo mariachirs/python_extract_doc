@@ -1,0 +1,125 @@
+from docx import Document
+from docx.table import Table
+from typing import List, Dict, Optional
+
+
+def normalize_text(text: str) -> str:
+    """Replace newlines with spaces and trim whitespace."""
+    return text.replace("\n", " ").strip()
+
+
+def find_header_row_index(table: Table, header_cells: List[str]) -> Optional[int]:
+    """
+    Locate the row index in `table` whose cells cover all `header_cells` labels.
+    Returns the index if found, otherwise None.
+    """
+    for idx, row in enumerate(table.rows):
+        texts = [normalize_text(cell.text) for cell in row.cells]
+        if all(any(h.lower() == t.lower() or h.lower() in t.lower() for t in texts) for h in header_cells):
+            return idx
+    return None
+
+
+def map_header_indices(
+    table: Table,
+    header_cells: List[str],
+    header_index: int
+) -> Dict[str, List[int]]:
+    """
+    Build a mapping from each canonical header to the list of original cell indices
+    in `table.rows[header_index]` whose text matches or contains that header.
+    """
+    header_row = table.rows[header_index]
+    texts = [normalize_text(cell.text) for cell in header_row.cells]
+    index_map: Dict[str, List[int]] = {}
+    for h in header_cells:
+        # exact matches
+        matches = [i for i, t in enumerate(texts) if t.lower() == h.lower()]
+        if not matches:
+            # fallback substring
+            matches = [i for i, t in enumerate(texts) if h.lower() in t.lower()]
+        if matches:
+            index_map[h] = matches
+    return index_map
+
+
+def is_normalization_needed(
+    table: Table,
+    header_cells: List[str],
+    header_index: int
+) -> bool:
+    """
+    Determine if the table header deviates from the canonical layout.
+    Returns True if number of header cells differs, or mapping isn't one-to-one in order.
+    """
+    # direct cell count mismatch
+    raw_count = len(table.rows[header_index].cells)
+    if raw_count != len(header_cells):
+        return True
+    # check mapping sequence
+    index_map = map_header_indices(table, header_cells, header_index)
+    # each header must map to exactly one corresponding cell in sequence
+    for idx, h in enumerate(header_cells):
+        if h not in index_map or index_map[h] != [idx]:
+            return True
+    return False
+
+
+def normalize_and_reconstruct_table(
+    table: Table,
+    document: Document,
+    header_cells: List[str],
+    header_index: int
+) -> Table:
+    """
+    Normalize the header row to exactly `header_cells` columns and rebuild rows by
+    merging or splitting cells based on `map_header_indices`.
+    """
+    index_map = map_header_indices(table, header_cells, header_index)
+    new_table = document.add_table(rows=1, cols=len(header_cells))
+    new_table.style = table.style
+
+    # Populate canonical header row
+    for col_idx, h in enumerate(header_cells):
+        new_table.cell(0, col_idx).text = h
+
+    # Copy data rows
+    for row in table.rows[header_index + 1:]:
+        row_vals = []
+        for h in header_cells:
+            for orig_idx in index_map.get(h, []):
+                if orig_idx < len(row.cells):
+                    row_vals.append(normalize_text(row.cells[orig_idx].text))
+        if not any(row_vals):
+            continue
+
+        new_cells = new_table.add_row().cells
+        for col_idx, h in enumerate(header_cells):
+            values = []
+            for orig_idx in index_map.get(h, []):
+                if orig_idx < len(row.cells):
+                    txt = normalize_text(row.cells[orig_idx].text)
+                    if txt:
+                        values.append(txt)
+            new_cells[col_idx].text = " ".join(values)
+
+    Table._element.getparent(table._element).replace(table._element, new_table._element)
+    return new_table
+
+
+def rebuild_tables(document: Document, header_cells: List[str]) -> Document:
+    """
+    For each table matching `header_cells`, normalize its header layout and rebuild it,
+    but only when normalization is actually needed.
+    """
+    for table in list(document.tables):
+        idx = find_header_row_index(table, header_cells)
+        if idx is not None and is_normalization_needed(table, header_cells, idx):
+            normalize_and_reconstruct_table(table, document, header_cells, idx)
+    return document
+
+# Usage example:
+# doc = Document('CV_input.docx')
+# headers = ["No", "Client", "Projet", "Fonction", "Envergure (j-p.)", "Année", "Effort (mois)"]
+# rebuild_tables(doc, headers)
+# doc.save('CV_normalized.docx')
