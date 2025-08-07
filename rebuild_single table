@@ -1,0 +1,79 @@
+from docx import Document
+import pandas as pd
+from ace_tools import display_dataframe_to_user
+
+# Utility functions copied from Rebuild Tables implementation
+def normalize_text(text: str) -> str:
+    return text.replace("\n", " ").strip()
+
+def find_header_row_index(table, header_cells):
+    for idx, row in enumerate(table.rows):
+        texts = [normalize_text(cell.text) for cell in row.cells]
+        if all(h in texts for h in header_cells):
+            return idx
+    return None
+
+def reconstruct_single_table(table, document, header_cells, header_index):
+    new_table = document.add_table(rows=1, cols=len(header_cells))
+    new_table.style = table.style
+    for col_idx, header in enumerate(header_cells):
+        new_table.cell(0, col_idx).text = header
+    for row in table.rows[header_index + 1:]:
+        if not any(normalize_text(cell.text) for cell in row.cells):
+            continue
+        new_cells = new_table.add_row().cells
+        for col_idx, cell in enumerate(row.cells):
+            if col_idx < len(header_cells):
+                new_cells[col_idx].text = normalize_text(cell.text)
+    table._element.getparent().replace(table._element, new_table._element)
+
+
+def rebuild_tables(document, header_cells):
+    for table in list(document.tables):
+        idx = find_header_row_index(table, header_cells)
+        if idx is not None:
+            reconstruct_single_table(table, document, header_cells, idx)
+    return document
+
+# Paths and headers
+input_path = "/mnt/data/CV_052114_YvesMcDuff_RP_AnalysteOrganique_2025-07-18_FR.docx"
+output_path = "/mnt/data/test_output.docx"
+header_cells = ["No", "Client", "Projet", "Fonction", "Envergure (j-p.)", "Année", "Effort (mois)"]
+
+# Load input document and collect summary before rebuilding
+doc = Document(input_path)
+summary = []
+for i, table in enumerate(doc.tables):
+    idx = find_header_row_index(table, header_cells)
+    summary.append({"table_index": i, "header_row_index_before": idx, "rows_before": len(table.rows)})
+
+# Rebuild tables and save output document
+rebuild_tables(doc, header_cells)
+doc.save(output_path)
+
+# Load rebuilt document and extend summary after
+rebuilt_doc = Document(output_path)
+for item in summary:
+    i = item["table_index"]
+    if i < len(rebuilt_doc.tables):
+        table = rebuilt_doc.tables[i]
+        idx_after = find_header_row_index(table, header_cells)
+        item["header_at_row0_after"] = (idx_after == 0)
+        item["rows_after"] = len(table.rows)
+    else:
+        item["header_at_row0_after"] = False
+        item["rows_after"] = None
+
+# Display summary DataFrame
+df_summary = pd.DataFrame(summary)
+display_dataframe_to_user(name="Table Summary Before vs After", dataframe=df_summary)
+
+# Extract first 5 data rows of the rebuilt table with header at row 0
+rebuilt_tables = [t for t in rebuilt_doc.tables if [normalize_text(c.text) for c in t.rows[0].cells] == header_cells]
+if rebuilt_tables:
+    tbl = rebuilt_tables[0]
+    rows_data = []
+    for r in tbl.rows[:6]:  # header + 5 data rows
+        rows_data.append([normalize_text(c.text) for c in r.cells])
+    df_rows = pd.DataFrame(rows_data[1:], columns=rows_data[0])
+    display_dataframe_to_user(name="First 5 Data Rows", dataframe=df_rows)
