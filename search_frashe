@@ -1,0 +1,113 @@
+rom docx import Document
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.text.paragraph import Paragraph
+from docx.table import Table
+from typing import Iterator, Tuple, Optional, List
+
+# ---------------- Iterate document blocks ----------------
+def iter_block_items(doc: Document) -> Iterator[Tuple[str, object]]:
+    """
+    Iterate over the document body in order, yielding ('paragraph', Paragraph) or ('table', Table).
+    This preserves the original reading order.
+    """
+    for child in doc.element.body.iterchildren():
+        if isinstance(child, CT_P):
+            yield ("paragraph", Paragraph(child, doc))
+        elif isinstance(child, CT_Tbl):
+            yield ("table", Table(child, doc))
+
+# ---------------- Detect heading paragraphs ----------------
+def is_heading_paragraph(p: Paragraph) -> bool:
+    """
+    Check if the paragraph is a heading (Heading/Titre/Título 1..9 or has outline level set in XML).
+    """
+    name_lower = ((p.style.name if p.style else "") or "").lower()
+    if name_lower.startswith("heading ") or name_lower.startswith("titre ") or name_lower.startswith("título "):
+        parts = name_lower.split()
+        if len(parts) >= 2 and parts[1].isdigit():
+            return True
+    try:
+        pPr = p._p.pPr
+        if pPr is not None and pPr.outlineLvl is not None:
+            return True
+    except Exception:
+        pass
+    return False
+
+# ---------------- Extract mandate number from a table ----------------
+def extract_mandat_no_from_table(tbl: Table) -> Optional[str]:
+    """
+    If the first row has 'Mandat n...' in the first cell,
+    return the mandate number from the right cell; otherwise None.
+    """
+    if len(tbl.rows) < 1 or len(tbl.rows[0].cells) != 2:
+        return None
+    left = tbl.cell(0, 0).text.strip()
+    right = tbl.cell(0, 1).text.strip()
+    if left.lower().startswith("mandat n"):
+        num = ""
+        for ch in right:
+            if ch.isdigit():
+                num += ch
+            elif num:
+                break
+        return num if num else None
+    return None
+
+# ---------------- Search for target phrase ----------------
+def paragraph_has_task_phrase(p: Paragraph, phrases: List[str]) -> bool:
+    """
+    Check if paragraph contains one of the target phrases (case-insensitive).
+    """
+    txt_lower = p.text.lower()
+    for phrase in phrases:
+        if phrase.lower() in txt_lower:
+            return True
+    return False
+
+def has_tasks_phrase_after_table(doc: Document, start_table: Table, phrases: List[str]) -> bool:
+    """
+    From the position of start_table, search forward until the next heading.
+    Return True if one of the target phrases is found before the heading.
+    """
+    after = False
+    for kind, item in iter_block_items(doc):
+        if not after:
+            if item is start_table:
+                after = True
+            continue
+        if kind == "paragraph":
+            if is_heading_paragraph(item):
+                return False
+            if paragraph_has_task_phrase(item, phrases):
+                return True
+    return False
+
+# ---------------- Main API ----------------
+def check_mandate(doc: Document, mandat_no: str, phrases: List[str]) -> bool:
+    """
+    Given a loaded Document, the mandate number, and a list of target phrases:
+    - Find the table with the given mandate number
+    - Search after the table until the next heading
+    - Return True if a target phrase is found, otherwise False
+    """
+    for kind, item in iter_block_items(doc):
+        if kind == "table":
+            num = extract_mandat_no_from_table(item)
+            if num == mandat_no:
+                return has_tasks_phrase_after_table(doc, item, phrases)
+    raise ValueError(f"Mandat '{mandat_no}' not found in the document.")
+Example usage
+python
+Copier
+Modifier
+doc = Document("your_file.docx")
+
+target_phrases = [
+    "a effectué les tâches suivantes",
+    "a effectué les tâches suivantes suivante"
+]
+
+result = check_mandate(doc, "32", target_phrases)
+print(f"Mandat 32 -> {result}")
